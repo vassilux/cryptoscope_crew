@@ -1,0 +1,27 @@
+[project]
+name = "cryptoscope_crew"
+version = "0.1.0"
+description = "cryptoscope-crew using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "ccxt>=4.5.10",
+    "crewai[tools]>=0.177.0,<1.0.0",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "tzdata>=2025.2",
+]
+
+[project.scripts]
+cryptoscope_crew = "cryptoscope_crew.main:run"
+run_crew = "cryptoscope_crew.main:run"
+train = "cryptoscope_crew.main:train"
+replay = "cryptoscope_crew.main:replay"
+test = "cryptoscope_crew.main:test"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"

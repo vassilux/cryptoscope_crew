@@ -1,0 +1,46 @@
+scan_market:
+  description: |
+    Réponds en {lang}.
+    Date: {report_date}  Heure: {report_time}  ISO: {report_iso} (TZ: {tz})
+    Paires/timeframe: {pairs_display} / {timeframe}
+    (lookback={lookback})
+    Contexte JSON:
+    {context_json}
+    Mission: liste 3–5 catalyseurs (ETF, listings, upgrades L2, régulation) avec une phrase de résumé chacun.
+    Si l’outil de recherche a trouvé une source, cite-la ; sinon écris "Aucune source vérifiée".
+  expected_output: '{"key_drivers":["..."]}'
+  agent: researcher
+
+tech_review:
+  description: |
+    Réponds en {lang}.
+    Table technique (ne pas modifier) :
+    -----
+    {tech_table_md}
+    -----
+    Donne 3–5 observations techniques brèves (tendance, momentum, invalidations).
+  expected_output: '{"tech_notes":["..."]}'
+  agent: technician
+
+reporting_task:
+  description: |
+    Réponds en {lang}. Retourne UNIQUEMENT du Markdown avec EXACTEMENT ces sections, une fois chacune, dans cet ordre :
+    "## Points clés", "## Configuration technique", "## Risques", "## Watchlist".
+
+    Titre (obligatoire) :
+    Date: {report_date}  Heure: {report_time}  ISO: {report_iso} (TZ: {tz})
+
+    Contexte pairs/timeframe :
+    {context_json}
+
+    Table technique (NE PAS MODIFIER) :
+    -----
+    {tech_table_md}
+    -----
+
+    - Dans "## Configuration technique", insère la table ci-dessus telle quelle.
+    - N’ajoute pas d’autres sections ni titres.
+    - Si des sources existent (via recherche), liste-les à la fin sous "Sources". Sinon n’affiche pas de lien.
+  expected_output: "Markdown final du rapport."
+  agent: reporting_analyst
+  output_file: "{report_output_path}"
