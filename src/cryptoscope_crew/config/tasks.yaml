@@ -1,8 +1,10 @@
 scan_market:
   description: |
-    Réponds en {lang}.
+    Réponds uniquement en {lang}. Si ta sortie contient de l’anglais, retraduis immédiatement en {lang}.
     Date: {report_date}  Heure: {report_time}  ISO: {report_iso} (TZ: {tz})
-    Paires/timeframe: {pairs_display} / {timeframe}
+    Paires : {pairs_display} 
+    Timeframes: {timeframes_display}
+    {header_md}
     (lookback={lookback})
     Contexte JSON:
     {context_json}
@@ -13,34 +15,66 @@ scan_market:
 
 tech_review:
   description: |
-    Réponds en {lang}.
+    Réponds uniquement en {lang}. Si ta sortie contient de l’anglais, retraduis immédiatement en {lang}.
     Table technique (ne pas modifier) :
+
+    Timeframes: {timeframes_display}
+
     -----
     {tech_table_md}
     -----
-    Donne 3–5 observations techniques brèves (tendance, momentum, invalidations).
+    
+    Synthèse multi-timeframe :
+    -----
+    {summary_table_md}
+    -----
+
+    Tables des autres timeframes :
+    {tech_tables_md}
+
+    Donne 3–5 observations techniques (tendance, momentum, divergences, invalidations).
+
   expected_output: '{"tech_notes":["..."]}'
   agent: technician
 
 reporting_task:
   description: |
-    Réponds en {lang}. Retourne UNIQUEMENT du Markdown avec EXACTEMENT ces sections, une fois chacune, dans cet ordre :
-    "## Points clés", "## Configuration technique", "## Risques", "## Watchlist".
+    Réponds uniquement en {lang}. Sans blocs de code (pas de ```).
 
-    Titre (obligatoire) :
-    Date: {report_date}  Heure: {report_time}  ISO: {report_iso} (TZ: {tz})
+    Commence ta réponse en reproduisant EXACTEMENT ce bloc :
+    ---
+    {header_md}
+    ---
 
-    Contexte pairs/timeframe :
-    {context_json}
+    Ensuite, retourne EXACTEMENT ces sections, une seule fois chacune, dans cet ordre :
+    "## Points clés", "## Configuration technique", "## Synthèse multi-timeframe", "## Triggers par paire", "## Signaux prêts à tirer", "## Risques", "## Watchlist".
 
-    Table technique (NE PAS MODIFIER) :
+    ## Configuration technique
     -----
     {tech_table_md}
     -----
 
-    - Dans "## Configuration technique", insère la table ci-dessus telle quelle.
-    - N’ajoute pas d’autres sections ni titres.
-    - Si des sources existent (via recherche), liste-les à la fin sous "Sources". Sinon n’affiche pas de lien.
+    ## Synthèse multi-timeframe
+    -----
+    {summary_table_md}
+    -----
+    {tech_tables_md}
+
+    ## Triggers par paire
+    {triggers_md}
+
+    ## Signaux prêts à tirer
+    {ready_signals_md}
+
+    ## Risques
+    (complète selon le contexte)
+
+    ## Watchlist
+    (complète selon le contexte)
+
+    Contexte (référence) :
+    {context_json}
   expected_output: "Markdown final du rapport."
   agent: reporting_analyst
   output_file: "{report_output_path}"
+

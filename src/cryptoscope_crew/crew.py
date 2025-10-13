@@ -15,7 +15,7 @@ from crewai.project import llm as llm_decorator
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import SerperDevTool
 
-from cryptoscope_crew.reporting.precompute import precompute
+from cryptoscope_crew.reporting.precompute import precompute, precompute_multi, ready_signals_from_context, ready_signals_multi, tech_table_from_context, triggers_from_context
 
 ALLOWS_TEMPERATURE = {"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o4-mini"}
 
@@ -71,8 +71,7 @@ def _parse_pairs_env(val: str) -> list[str]:
 
 def _coerce_positive_int(val, default: int) -> int:
     try:
-        n = int(str(val).strip())
-        return n if n > 0 else default
+        n = int(str(val).strip()); return n if n > 0 else default
     except Exception:
         return default
 
@@ -93,6 +92,9 @@ def _tools_for(agent_name: str):
     names = mapping.get(agent_name, [])
     return [reg[n] for n in names if reg.get(n)]
 
+def _lang_guard(lang: str) -> str:
+    return "IMPORTANT: Réponds exclusivement en français. Si une partie est en anglais, retraduis-la en français."
+
 
 @CrewBase
 class CryptoscopeCrew:   
@@ -104,61 +106,116 @@ class CryptoscopeCrew:
     # Inputs runtime par défaut (surchargés par --inputs ou .env si fournis)
     # ---------------------------------------------------------------------
     @before_kickoff
-    def inject_runtime_inputs(self, inputs: Dict) -> Dict:
-        # ---- TZ + timestamps 
+    def inject_runtime_inputs(self, inputs: dict) -> dict:
+        # ---------- TZ & horodatage ----------
         tz_name = inputs.get("tz", os.getenv("TZ", "Europe/Paris"))
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
             print(f"⚠️ TZ '{tz_name}' introuvable. Fallback: UTC")
-            tz = ZoneInfo("UTC")
-            tz_name = "UTC"
-
+            tz = ZoneInfo("UTC"); tz_name = "UTC"
         now = datetime.now(tz)
+
+        inputs.setdefault("lang", os.getenv("LANG", "fr"))
+        inputs["tz"] = tz_name
         inputs.setdefault("report_date", now.strftime("%Y-%m-%d"))
         inputs.setdefault("report_time", now.strftime("%H:%M"))
         inputs.setdefault("report_iso",  now.isoformat())
-        inputs["tz"] = tz_name  # force la valeur finale
 
-        # ---- Langue
-        inputs.setdefault("lang", os.getenv("LANG", "fr"))
-
-        # ---- PAIRS depuis .env si non fournis en inputs
-        if "pairs" in inputs and inputs["pairs"]:
-            pairs = inputs["pairs"]
-            if isinstance(pairs, str):
-                pairs = _parse_pairs_env(pairs)
-        else:
-            env_pairs = os.getenv("PAIRS", "")
-            pairs = _parse_pairs_env(env_pairs) if env_pairs else ["BTC/USDT","ETH/USDT","XRP/USDT"]
-
+        # --- Marché
+        env_pairs = os.getenv("PAIRS", "")
+        pairs = inputs.get("pairs") or (_parse_pairs_env(env_pairs) if env_pairs else ["BTC/USDC","ETH/USDC"])
+        if isinstance(pairs, str):
+            pairs = _parse_pairs_env(pairs)
         inputs["pairs"] = pairs
         inputs["pairs_display"] = ", ".join(pairs)
-        inputs["pairs_json"] = json.dumps(pairs)
+        inputs["pairs_json"] = json.dumps(pairs, ensure_ascii=False)
 
-        # ---- TIMEFRAME priorité: inputs > .env > default
-        timeframe = inputs.get("timeframe") or os.getenv("TIMEFRAME") or "1d"
-        inputs["timeframe"] = timeframe
+        # --- TF principal + secondaires
+        tf_main = (inputs.get("timeframe") or os.getenv("TIMEFRAME") or "1d").lower()
+        inputs["timeframe"] = tf_main
 
-        # ---- LOOKBACK priorité: inputs > .env > default (entier positif)
-        lookback = inputs.get("lookback")
-        if lookback is None:
-            lookback = os.getenv("LOOKBACK", "500")
-        inputs["lookback"] = _coerce_positive_int(lookback, 500)
+        tfs_env = os.getenv("TIMEFRAMES", "").strip()
+        tf_list = [t.strip().lower() for t in tfs_env.split(",") if t.strip()] or [tf_main, "4h", "1h"]
+        # forcer le principal en tête + dédupliquer
+        tf_calc, seen = [], set()
+        for tf in [tf_main] + tf_list:
+            if tf not in seen:
+                tf_calc.append(tf); seen.add(tf)
+        inputs["timeframes"] = tf_calc
+        inputs["timeframes_display"] = ", ".join(tf_calc)
 
-        # ---- pré-calcules le contexte/table
-        bundle = precompute(inputs["pairs"], inputs["timeframe"], inputs["lookback"])
-        inputs.update(bundle)
 
-        # ---- fichier de sortie daté (si pas déjà fait)
-        fname = f"report_{now.strftime('%d%m%Y_%H%M')}.md"
+        # --- lookback / sortie
+        inputs["lookback"] = _coerce_positive_int(inputs.get("lookback", os.getenv("LOOKBACK", "450")), 450)
         outdir = inputs.get("output_dir", os.getenv("OUTPUT_DIR", "reports"))
         pathlib.Path(outdir).mkdir(parents=True, exist_ok=True)
-        safe_fname = re.sub(r'[^A-Za-z0-9._-]', '_', fname)
-        inputs["report_output_path"] = os.path.join(outdir, safe_fname)
+        inputs["report_output_path"] = os.path.join(outdir, f"report_{now.strftime('%d%m%Y_%H%M')}.md")
+
+       # --- header prêt à coller
+        inputs["header_md"] = (
+            f"**Timeframes :** {inputs['timeframes_display']} — **Paires :** {inputs['pairs_display']}\n"
+            f"**Date :** {inputs['report_date']}  **Heure :** {inputs['report_time']}  "
+            f"**ISO :** {inputs['report_iso']} (TZ: {inputs['tz']})"
+        )
+
+         # --- placeholders requis (fallbacks)
+        inputs.setdefault("context_json", "{}")
+        inputs.setdefault("tech_table_md", "(pas de table technique)")
+        inputs.setdefault("tech_tables_md", "")
+        inputs.setdefault("summary_table_md", "")
+        inputs.setdefault("triggers_md", "")
+        inputs.setdefault("ready_signals_md", "")
+
+        # --- calcul multi-TF
+        try:
+            bundle = precompute_multi(pairs, tf_calc, inputs["lookback"])
+
+            # principal
+            if tf_main in bundle["context_by_tf"]:
+                ctx_main = bundle["context_by_tf"][tf_main]
+                tech_main = bundle["tables_by_tf"][tf_main]
+                inputs["ready_signals_md"] = ready_signals_multi(
+                    bundle["context_by_tf"],
+                    order=inputs.get("timeframes", ["1d", "4h", "1h"])
+                )
+            else:
+                # filet de sécurité
+                single = precompute(pairs, tf_main, inputs["lookback"])
+                ctx_main = single.get("context", single)
+                tech_main = single.get("tech_table_md", tech_table_from_context(ctx_main))
+                # fallback ready_signals mono-TF
+                inputs["ready_signals_md"] = ready_signals_from_context(ctx_main)
+
+            # injections communes
+            inputs["context_json"]  = json.dumps(ctx_main, ensure_ascii=False)
+            inputs["tech_table_md"] = tech_main
+            inputs["triggers_md"]   = triggers_from_context(ctx_main)
+
+            # autres TF + synthèse
+            sections = []
+            for tf in tf_calc:
+                if tf == tf_main:
+                    continue
+                table = bundle["tables_by_tf"].get(tf)
+                if table:
+                    sections.append(f"### Table {tf}\n-----\n{table}\n-----")
+            inputs["tech_tables_md"]  = "\n\n".join(sections)
+            inputs["summary_table_md"] = bundle.get("summary_table_md", "")
+            inputs["context_by_tf_json"] = json.dumps(bundle["context_by_tf"], ensure_ascii=False)
+
+        except Exception as e:
+            print(f"⚠️ precompute_multi failed: {e}. Fallback sur TF principal.")
+            # fallbacks déjà posés
+
+        # (debug facultatif)
+        print("TF main:", tf_main)
+        print("TIMEFRAMES:", os.getenv("TIMEFRAMES","<none>"))
+        print("Tables multi présentes?:", bool(inputs["tech_tables_md"]))
+        print("Len summary_table_md:", len(inputs["summary_table_md"]))
 
         return inputs
-    
+   
     # -------------
     # Agents
     # -------------
@@ -170,6 +227,7 @@ class CryptoscopeCrew:
             verbose=True,
             tools=_tools_for("researcher"),
             llm=_llm_researcher(),
+            instructions=[_lang_guard("fr")],
             
         )
 
@@ -180,6 +238,7 @@ class CryptoscopeCrew:
             config=self.agents_config["technician"],  # type: ignore[index]
             verbose=True,
             llm=_llm_technician(),
+            instructions=[_lang_guard("fr")],
             
         )
 
@@ -188,9 +247,9 @@ class CryptoscopeCrew:
     def reporting_analyst(self) -> Agent:
         return Agent(
             config=self.agents_config["reporting_analyst"],
-            verbose=True,
-            tools=[SerperDevTool()],
+            verbose=True,            
             llm=_llm_analyst(),
+            instructions=[_lang_guard("fr")],
         )
     
     # -------------

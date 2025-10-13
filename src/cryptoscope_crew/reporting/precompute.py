@@ -3,69 +3,146 @@ from __future__ import annotations
 import asyncio, json
 from typing import Dict, List
 
+import numpy as np
+import pandas as pd
+
 from cryptoscope_crew.market.exchange import fetch_ohlcv_async
 from cryptoscope_crew.ta.ema_rsi import ema_rsi_signal  # ema/rsi + signal  :contentReference[oaicite:4]{index=4}
 
 def tech_table_from_context(context: dict) -> str:
     rows = [
-        "| Pair | Trend | RSI14 | Bias | Confidence | Notes |",
-        "|------|-------|-------|------|------------|-------|",
+        "| Pair | Close | EMA20 | EMA50 | RSI14 | ATR14 | Bias | Conf | Notes |",
+        "|------|-------|-------|-------|-------|-------|------|------|-------|",
     ]
     for p in context["pairs"]:
         pair = p["pair"]
-        ema_fast, ema_slow, rsi = p["ema_fast"], p["ema_slow"], p["rsi14"]
+        close = p.get("close")
+        ema_fast = p.get("ema_fast")
+        ema_slow = p.get("ema_slow")
+        rsi = p.get("rsi14")
+        atr = p.get("atr14")
 
         trend_up = ema_fast > ema_slow
-        trend = "Bullish" if trend_up else "Bearish"
         bias = "Bull" if trend_up else "Bear"
 
-        # écart relatif EMA (plus c'est large, plus la tendance est "forte")
+        # qualité de tendance + confiance
         ema_gap = abs(ema_fast - ema_slow) / max(1e-9, (ema_fast + ema_slow) / 2)
-
-        # score RSI (50=neutre, >55 bon, <45 faible)
-        if rsi >= 60:
-            rsi_score = 1.0
-        elif rsi >= 55:
-            rsi_score = 0.8
-        elif rsi >= 50:
-            rsi_score = 0.65
-        elif rsi >= 45:
-            rsi_score = 0.5
-        elif rsi >= 40:
-            rsi_score = 0.35
-        else:
-            rsi_score = 0.2
-
-        # score tendance vs RSI
+        if   rsi >= 60: rsi_score = 1.0
+        elif rsi >= 55: rsi_score = 0.8
+        elif rsi >= 50: rsi_score = 0.65
+        elif rsi >= 45: rsi_score = 0.5
+        elif rsi >= 40: rsi_score = 0.35
+        else:           rsi_score = 0.2
         base = 0.55 if trend_up else 0.45
-        score = base + 0.5 * ema_gap + 0.5 * (rsi_score - 0.5)
-        score = max(0.0, min(1.0, score))
+        score = max(0.0, min(1.0, base + 0.5*ema_gap + 0.5*(rsi_score-0.5)))
+        conf = "High" if score>=0.75 else "Medium" if score>=0.55 else "Low"
 
-        if score >= 0.75:
-            conf = "High"
-        elif score >= 0.55:
-            conf = "Medium"
+        if trend_up and rsi < 45:
+            note = "Tendance haussière mais momentum faible (RSI<45) : prudence, risque d’invalidation."
+        elif (not trend_up) and rsi > 55:
+            note = "Tendance baissière mais momentum ferme (RSI>55) : risque de squeeze/retournement."
         else:
-            conf = "Low"
+            note = "TA auto (Close, EMA20/EMA50, RSI14, ATR14)."
 
-        notes = "TA auto (EMA20/EMA50, RSI14). Confiance pénalisée si RSI<45."
-        rows.append(f"| **{pair}** | {trend} | {rsi:.2f} | {bias} | {conf} | {notes} |")
+        rows.append(
+            f"| **{pair}** | {close:.4f} | {ema_fast:.4f} | {ema_slow:.4f} | "
+            f"{rsi:.2f} | {atr:.4f} | {bias} | {conf} | {note} |"
+        )
     return "\n".join(rows)
 
+
+def _ema(series: pd.Series, span: int) -> pd.Series:
+    return series.ewm(span=span, adjust=False).mean()
+
+def _rsi14(close: pd.Series, n: int = 14) -> pd.Series:
+    diff = close.diff()
+    up = diff.clip(lower=0)
+    down = -diff.clip(upper=0)
+    roll_up = up.ewm(alpha=1/n, adjust=False).mean()
+    roll_down = down.ewm(alpha=1/n, adjust=False).mean()
+    rs = roll_up / (roll_down.replace(0, np.nan))
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50.0)
+
+def _atr14(df: pd.DataFrame, n: int = 14) -> pd.Series:
+    # df: columns ["open","high","low","close"]
+    prev_close = df["close"].shift(1)
+    tr = pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - prev_close).abs(),
+        (df["low"] - prev_close).abs()
+    ], axis=1).max(axis=1)
+    # Wilder’s smoothing (EMA alpha = 1/n)
+    return tr.ewm(alpha=1/n, adjust=False).mean()
+
+def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["ema20"] = _ema(out["close"], 20)
+    out["ema50"] = _ema(out["close"], 50)
+    out["rsi14"] = _rsi14(out["close"], 14)
+    out["atr14"] = _atr14(out, 14)
+    return out
+
+def triggers_from_context(context: dict) -> str:
+    """Génère des triggers simples par paire (TF = context['timeframe'])."""
+    lines = []
+    tf = context.get("timeframe", "?")
+    lines.append(f"_Timeframe: {tf}_")
+    for p in context["pairs"]:
+        pair = p["pair"]; c = p["close"]; e20 = p["ema_fast"]; e50 = p["ema_slow"]; r = p["rsi14"]
+        # Règles simples & transparentes:
+        # Long trigger: close > EMA20 && RSI>45 ; Confirm: close > EMA50 || Higher High sur TF inférieur (optionnel)
+        # Short trigger: close < EMA20 && RSI<55 (si trend bear, on préfère RSI<50/45) ; Confirm: close < EMA50
+        if e20 > e50:
+            long_trig  = f"Clôture > EMA20 ({e20:.4f}) ET RSI>45"
+            long_conf  = f"Renfort si clôture > EMA50 ({e50:.4f})"
+            invalid    = f"Clôture < EMA50 ({e50:.4f}) OU RSI<40"
+            bias = "Bull"
+        else:
+            long_trig  = f"Reclaim EMA20 ({e20:.4f}) + RSI>45 (setup contre-tendance)"
+            long_conf  = f"Puis clôture > EMA50 ({e50:.4f}) pour valider"
+            invalid    = f"Clôture < EMA20 ({e20:.4f}) confirmée OU RSI<40"
+            bias = "Bear"
+
+        if e20 > e50:
+            short_trig = f"Rejet EMA20 ({e20:.4f}) AVEC RSI<55 (contre-tendance)"
+            short_conf = f"Valide si clôture < EMA50 ({e50:.4f})"
+        else:
+            short_trig = f"Clôture < EMA20 ({e20:.4f}) ET RSI<50"
+            short_conf = f"Renfort si clôture < EMA50 ({e50:.4f})"
+
+        lines.append(
+            f"- **{pair}** ({bias})  \n"
+            f"  • Long: {long_trig} → {long_conf}  \n"
+            f"  • Short: {short_trig} → {short_conf}  \n"
+            f"  • Invalidation: {invalid}"
+        )
+    return "\n".join(lines)
+
 async def _build_context_async(pairs: List[str], timeframe: str, lookback: int) -> Dict:
-    dfs = await asyncio.gather(*[fetch_ohlcv_async(p, timeframe, lookback) for p in pairs])  # :contentReference[oaicite:5]{index=5}
+    dfs = await asyncio.gather(*[fetch_ohlcv_async(p, timeframe, lookback) for p in pairs])
     ctx_pairs = []
     for pair, df in zip(pairs, dfs):
-        sig = ema_rsi_signal(df).iloc[-1]
+        # <-- calcule les indicateurs numériques
+        df = compute_indicators(df)
+        last = df.iloc[-1]
+        close = float(last["close"])
+        ema_fast = float(last["ema20"])
+        ema_slow = float(last["ema50"])
+        rsi = float(last["rsi14"])
+        atr = float(last["atr14"])
+
         ctx_pairs.append({
             "pair": pair,
-            "close": float(df["close"].iloc[-1]),
-            "ema_fast": float(sig["ema_fast"]),
-            "ema_slow": float(sig["ema_slow"]),
-            "rsi14": float(sig["rsi14"]),
-            "bias": "bull" if sig["ema_fast"] > sig["ema_slow"] else "bear",
+            "close": close,
+            "ema_fast": ema_fast,
+            "ema_slow": ema_slow,
+            "rsi14": rsi,
+            "atr14": atr,
+            "bias": "bull" if ema_fast > ema_slow else "bear",
         })
     return {"timeframe": timeframe, "pairs": ctx_pairs}
+
 
 def build_context(pairs: List[str], timeframe: str, lookback: int) -> Dict:
     return asyncio.run(_build_context_async(pairs, timeframe, lookback))
@@ -81,3 +158,100 @@ def precompute(pairs: List[str], timeframe: str, lookback: int) -> Dict[str, str
         "context_json": json.dumps(ctx),
         "tech_table_md": tech_table_from_context(ctx)
     }
+def precompute_multi(pairs: list[str], timeframes: list[str], lookback: int) -> dict:
+    """Retourne:
+       - context_by_tf: { "1d": {...}, "4h": {...}, ... }
+       - tables_by_tf: { "1d": "markdown", "4h": "markdown", ... }
+       - summary_table_md: "markdown" (biais par TF + score d'alignement)
+    """
+    context_by_tf, tables_by_tf = {}, {}
+    for tf in timeframes:
+        ctx = build_context(pairs, tf, lookback)
+        context_by_tf[tf] = ctx
+        tables_by_tf[tf] = tech_table_from_context(ctx)
+
+    # tableau de synthèse (biais par TF + score)
+    rows = ["| Pair | 1D | 4H | 1H | Alignement |",
+            "|------|----|----|----|-----------|"]
+    def col(p, tf):
+        # "Bull" / "Bear" depuis le contexte
+        r = next(x for x in context_by_tf[tf]["pairs"] if x["pair"] == p)
+        return "Bull" if r["ema_fast"] > r["ema_slow"] else "Bear"
+    for p in pairs:
+        b1d = col(p, "1d") if "1d" in context_by_tf else "-"
+        b4h = col(p, "4h") if "4h" in context_by_tf else "-"
+        b1h = col(p, "1h") if "1h" in context_by_tf else "-"
+        votes = [b for b in (b1d, b4h, b1h) if b in ("Bull","Bear")]
+        bull = votes.count("Bull"); bear = votes.count("Bear")
+        align = f"{max(bull,bear)}/{len(votes)}"
+        rows.append(f"| **{p}** | {b1d} | {b4h} | {b1h} | {align} |")
+    summary_md = "\n".join(rows)
+
+    return {
+        "context_by_tf": context_by_tf,
+        "tables_by_tf": tables_by_tf,
+        "summary_table_md": summary_md
+    }
+
+
+def _fmt_pct(x: float) -> str:
+    s = f"{x:.2f}%"
+    return s.replace(".00%", "%")
+
+def _pct_to_level(price: float, level: float) -> float:
+    if price == 0:
+        return 0.0
+    return (level - price) / price * 100.0
+
+def ready_signals_from_context(context: dict, label: str | None = None) -> str:
+    """
+    Génère une ligne par paire du timeframe `context` avec :
+      - distance % au reclaim EMA20 et EMA50,
+      - delta RSI vers 45 et 50 (seuils de momentum minimal),
+      - un tag 'À portée' si distance EMA20 < 0.5*ATR(14).
+    `label` (ex: '1d' ou '4h') est ajouté pour clarté.
+    """
+    tf = label or context.get("timeframe", "?")
+    lines = [f"_Timeframe: {tf}_"]
+    for p in context["pairs"]:
+        pair   = p["pair"]
+        close  = p["close"]
+        ema20  = p["ema_fast"]
+        ema50  = p["ema_slow"]
+        rsi    = p["rsi14"]
+        atr    = p.get("atr14", None)
+
+        # distances %
+        d_ema20 = _pct_to_level(close, ema20)
+        d_ema50 = _pct_to_level(close, ema50)
+        # deltas RSI
+        drsi45 = max(0.0, 45.0 - rsi)
+        drsi50 = max(0.0, 50.0 - rsi)
+
+        tag = ""
+        if atr is not None and close > 0:
+            # heuristique "à portée" : < 0.5*ATR
+            # On convertit 0.5*ATR en % du close ≈ (0.5*ATR / close)*100
+            atr_pct = (0.5 * atr) / close * 100.0
+            if abs(d_ema20) <= atr_pct:
+                tag = " — **À portée**"
+
+        sign = "↑" if d_ema20 > 0 else "↓"  # si >0, il manque une hausse, si <0 on est déjà au-dessus
+        # Construction
+        part_price = (
+            f"Prix={close:.4f} | EMA20={ema20:.4f} ({_fmt_pct(d_ema20)}) | "
+            f"EMA50={ema50:.4f} ({_fmt_pct(d_ema50)}){tag}"
+        )
+        part_rsi = f"RSI={rsi:.2f} → 45: {drsi45:.2f} pts, → 50: {drsi50:.2f} pts"
+
+        lines.append(f"- **{pair}** {sign}  \n  • {part_price}  \n  • {part_rsi}")
+    return "\n".join(lines)
+
+
+def ready_signals_multi(context_by_tf: dict, order: list[str] = None) -> str:
+    order = order or ["1d", "4h", "1h"]
+    blocks = []
+    for tf in order:
+        if tf in context_by_tf:
+            blocks.append(ready_signals_from_context(context_by_tf[tf], tf))
+    return "\n\n".join(blocks)
