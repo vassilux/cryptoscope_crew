@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-dryrun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps (uv)
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync env
+        run: uv sync
+
+      - name: Lint
+        run: |
+          uv run python -m pip install ruff==0.6.9
+          uv run ruff check .
+
+      - name: Dry-run crew (sans clés, uniquement préprocess)
+        env:
+          LANG: fr
+          TZ: Europe/Paris
+        run: |
+          # on évite d’appeler l’LLM en CI : ajoute une option --offline si tu en as une
+          uv run python -m cryptoscope_crew.main --inputs offline=true || true
