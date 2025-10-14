@@ -1,205 +1,181 @@
-# Cryptoscope Crew — Analyse crypto éducative (CrewAI)
+# cryptoscope_crew
 
-> Projet **éducatif et de recherche** sur l’analyse de marché crypto.  
-> **Aucune recommandation financière. Utilisation à vos risques.**
+[![CI](https://github.com/vassilux/cryptoscope_crew/actions/workflows/ci.yml/badge.svg)](https://github.com/vassilux/cryptoscope_crew/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![CrewAI](https://img.shields.io/badge/Agentic-CrewAI-5a67d8)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
----
-
-## 👀 Objectif
-
-Ce repo illustre comment :
-- agréger des **données techniques** (EMA20/EMA50, RSI14) sur plusieurs paires,
-- orchestrer une **pipeline d’analyse** (recherche → analyse technique → rédaction) avec **CrewAI**,
-- produire un **rapport quotidien** en Markdown.
-
-Le tout est pensé pour l’**apprentissage**, l’expérimentation et la **reproductibilité**.
+> **Projet éducatif & de recherche** sur l’analyse du marché crypto, basé sur un *crew* d’agents (CrewAI) qui combinent **analyse technique multi‑timeframes**, **narratifs “hype”** (recherche web) et **rapport quotidien** en Markdown.  
+> ⚠️ _Aucune recommandation d’investissement. Utilisation à vos risques._
 
 ---
 
-## ⚠️ Avertissement (très important)
+## ✨ Fonctionnalités
 
-- Ce projet n’est **pas** un conseil en investissement.  
-- Les marchés crypto sont volatils : **faites vos propres recherches** (DYOR) et n’investissez jamais plus que ce que vous pouvez perdre.  
-- Le code, prompts et réglages LLM sont fournis **tels quels**, **sans garantie**. Vous êtes seul responsable de leur usage.
-
----
-
-## 🧱 Stack & fonctionnalités
-
-- **Python** (3.11+ conseillé)
-- **CrewAI** pour l’orchestration des agents & tâches
-- **OpenAI LLMs** (configurable par agent)
-- **ccxt** pour la donnée de marché (OHLCV)
-- **pandas / numpy** pour le calcul TA
-- **tzdata** (Windows) pour les fuseaux horaires
-- **Serper** (optionnel) pour la recherche web sourcée
+- **Multi‑timeframes** (par défaut: `1d, 4h, 1h`) avec table TA par TF : `Close, EMA20, EMA50, RSI14, ATR14`.
+- **Synthèse d’alignement** (Bull/Bear/Neutral par TF) + **“Signaux prêts à tirer”** (distances EMA/RSI avec heuristique _À portée_ via ATR).
+- **Narratifs en tendance (24–72h)**: scan des thèmes (ETF, L2, RWA, AI‑coins, memecoins, airdrops…) avec **sources vérifiées** (Serper).
+- **Rapport Markdown** horodaté (TZ configurable) avec sections normalisées :
+  - `Points clés` • `Configuration technique` • `Synthèse multi‑timeframe`
+  - `Signaux prêts à tirer` • `Triggers par paire`
+  - `Narratifs en tendance` • `Risques` • `Watchlist`
+- **Entièrement en français** (ou selon `{lang}`), reproductible, et **orienté spot / renforcement sur force**.
 
 ---
 
-## 📁 Structure (principaux fichiers)
+## 🧱 Architecture (vue rapide)
 
 ```
-src/cryptoscope_crew/
-├─ crew.py                     # définition de la Crew, agents & tasks (+ injection des inputs)
-├─ agents.yaml                 # rôles & instructions des agents
-├─ tasks.yaml                  # descriptions & outputs attendus
-├─ reporting/
-│   ├─ __init__.py
-│   └─ precompute.py           # calcul du contexte TA + table technique
-├─ market/
-│   ├─ __init__.py
-│   └─ exchange.py             # fetch OHLCV via ccxt
-├─ ta/
-│   ├─ __init__.py
-│   └─ ema_rsi.py              # EMA20/EMA50 + RSI14 + heuristiques simples
-├─ risk/
-│   ├─ __init__.py
-│   └─ risk.py                 # (optionnel) helpers de sizing/risque
-└─ config.py                   # lecture centralisée du .env
+cryptoscope_crew/
+├─ src/cryptoscope_crew/
+│  ├─ crew.py                 # Définition du Crew, agents & tasks, injection des inputs
+│  ├─ market/                 # Routines marché (OHLCV, indicateurs)
+│  ├─ reporting/
+│  │  ├─ precompute.py        # Pré‑calcul TA, tables, triggers, “signaux prêts à tirer”
+│  │  └─ …
+│  └─ …
+├─ agents.yaml                # Rôles des agents (researcher, technician, reporting_analyst)
+├─ tasks.yaml                 # Tâches (scan_market, narrative_scan, tech_review, reporting_task)
+├─ reports/                   # Rapports générés (ignoré par git)
+└─ ...
 ```
-
-Le rapport est écrit dans `reports/` en suivant le pattern :  
-`report_DDMMYYYY_HHMM.md` (ex. `report_12102025_1134.md`).
 
 ---
 
-## 🔧 Installation
+## 🔧 Prérequis
 
-```bash
-# 1) Crée un venv
-python -m venv .venv
-# 2) Active-le
-# Windows PowerShell:
-. .venv/Scripts/Activate.ps1
-# macOS / Linux:
-source .venv/bin/activate
-
-# 3) Installe les deps
-pip install -U pip
-pip install crewai ccxt pandas numpy python-dotenv tzdata
-# + optionnel : crewai-tools (Serper)
-pip install crewai-tools
-```
-
-> Sur **Windows**, `tzdata` est recommandé pour `ZoneInfo("Europe/Paris")`.
+- Python **3.12**
+- Clés API si vous activez les LLM/outils :
+  - `OPENAI_API_KEY` (modèles `gpt-5`, `gpt-4o-mini`, etc.)
+  - `SERPER_API_KEY` (recherche d’actus pour narratifs)
+- (Optionnel) `uv` pour la gestion d’environnement rapide
 
 ---
 
-## 🔐 Configuration (.env)
+## ⚙️ Configuration
 
-Crée un fichier `.env` à la racine du projet :
-
-```env
+Créez un fichier `.env` à la racine (ne pas committer vos vraies clés) :
+```ini
 # Langue & fuseau
 LANG=fr
 TZ=Europe/Paris
 
-# Marché (séparés par virgules ou espaces)
-PAIRS=BTC/USDC, ETH/USDC, XRP/USDC, ADA/USDC
+# Marché
+PAIRS=BTC/USDC, ETH/USDC, XRP/USDC, ADA/USDC, LTC/USDC
+TIMEFRAMES=1d,4h,1h
 TIMEFRAME=1d
 LOOKBACK=450
 
-# Dossier de sortie
-OUTPUT_DIR=reports
-
 # OpenAI
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
-# Un modèle par agent (ou un seul modèle global OPENAI_MODEL_NAME)
+OPENAI_API_KEY=sk-...
 OPENAI_MODEL_RESEARCHER=gpt-5
 OPENAI_MODEL_TECHNICIAN=gpt-4o-mini
 OPENAI_MODEL_ANALYST=gpt-4o-mini
 
-# Optionnel: recherche web (Serper)
-SERPER_API_KEY=xxxxxxxxxxxxxxxx
+# Recherche (narratifs)
+SERPER_API_KEY=serper-...
+
+# Sortie
+REPORT_DIR=reports
 ```
 
-**Notes :**
-- Les variables `.env` peuvent être **surclassées** par la ligne de commande (via `--inputs`).
-- Si vous utilisez un modèle qui **n’accepte pas `temperature`**, le code n’enverra pas ce paramètre (patch prévu).
+> Un fichier `.env.sample` peut être fourni à titre d’exemple (sans vraies clés).
 
 ---
 
-## ▶️ Exécution
+## 🚀 Démarrage rapide
 
-### Option 1 — Par défaut (prend la config du `.env`)
+### Via CrewAI (recommandé)
 ```bash
 crewai run
 ```
 
-### Option 2 — Override rapide (sans toucher au `.env`)
+### Via Python
 ```bash
-crewai run --inputs timeframe=1h --inputs lookback=1200            --inputs pairs='["BTC/USDC","ETH/USDC","XRP/USDC"]'
+uv run python -m cryptoscope_crew.main
+# ou
+python -m cryptoscope_crew.main
 ```
 
-Le run produit un fichier du type :
+### Paramètres utiles
+Vous pouvez surcharger à l’exécution via `--inputs` :
+```bash
+python -m cryptoscope_crew.main   --inputs lang=fr tz=Europe/Paris timeframe=1d            pairs="BTC/USDC,ETH/USDC,XRP/USDC" lookback=450
 ```
-reports/report_12102025_1134.md
+
+- Les rapports sont générés dans `reports/` sous la forme `report_DDMMYYYY_HHMM.md`.
+- Le writer force le format en sections pour une lecture immédiate.
+
+---
+
+## 🧠 Comment ça marche (agents & tasks)
+
+- **researcher** : capte **catalyseurs** & **narratifs** (avec Serper).
+- **technician** : commente la **table TA** (EMA/RSI/ATR) + divergences multi‑TF & invalidations.
+- **reporting_analyst** : assemble le **rapport** final (sections normalisées).
+
+**Ordre d’exécution** (séquentiel) :
+1. `scan_market` → 3–5 catalyseurs du jour (+sources si dispo)
+2. `narrative_scan` → 3–5 narratifs en tendance (JSON strict, sources vérifiées)
+3. `tech_review` → remarques techniques & invalidations
+4. `reporting_task` → rapport final Markdown
+
+---
+
+## 📄 Exemple de sortie (extrait)
+
+```md
+---
+**Timeframes :** 1d, 4h, 1h — **Paires :** BTC/USDC, ETH/USDC, XRP/USDC, ADA/USDC
+**Date :** 2025-10-14  **Heure :** 08:00  **ISO :** 2025-10-14T08:00:00+02:00 (TZ: Europe/Paris)
+---
+
+## Points clés
+- ETH proche d’un reclaim daily (RSI→50) — renforcer sur force.
+- BTC quasi au-dessus d’EMA50(4h) — surveiller momentum 4h.
+- XRP/ADA encore loin des EMA(1d) — privilégier des entrées confirmées.
+
+## Signaux prêts à tirer
+- **ETH** — Prix=4 240 | EMA20: 0.45% à franchir | EMA50: déjà > …  | RSI=49.6 (→50: 0.4 pt)
+- **BTC** — Prix=115 700 | EMA20: 1.1% à franchir | EMA50: déjà > … | RSI=48.9 (→50: 1.1 pt)
 ```
 
 ---
 
-## 🧠 Comment ça marche (en bref)
+## 💸 Coûts & bonnes pratiques
 
-1. `@before_kickoff` (dans `crew.py`) lit **LANG/TZ/PAIRS/TIMEFRAME/LOOKBACK** depuis `.env` (ou inputs CLI), fixe la date/heure et prépare le **nom de fichier** de sortie.
-2. `reporting/precompute.py` calcule un **contexte TA** (EMA/RSI) + la **table technique Markdown**.
-3. CrewAI exécute les **3 tâches** séquentielles :
-   - `scan_market` (Chercheur) — points clés / catalyseurs (optionnellement sourcés via Serper),
-   - `tech_review` (Technicien) — observations techniques à partir de la table calculée,
-   - `reporting_task` (Analyste) — un **rapport synthétique** en français.
+- **Limiter la verbosité** (`verbose=False`) pour réduire les tokens.
+- Utiliser un modèle plus économique pour les tâches narratives/techniques si nécessaire.
+- Les tables/indicateurs sont calculés localement ; seules les tâches “texte” appellent l’LLM/outils.
 
 ---
 
-## 🛠️ Personnalisation
+## 🛡️ Avertissements
 
-- **Langue** : `LANG=fr` par défaut → peut être forcé en tâche & agent (instructions “Réponds uniquement en {lang}.”).
-- **Modèles** : un modèle par agent via `.env`  
-  (`OPENAI_MODEL_RESEARCHER`, `OPENAI_MODEL_TECHNICIAN`, `OPENAI_MODEL_ANALYST`) ou `OPENAI_MODEL_NAME` global.
-- **Paires** : définies dans `.env` → normalisées (`BTCUSDC` est accepté, converti en `BTC/USDC`).
-- **Timeframe/Lookback** : `.env` ou `--inputs`.
-- **Recherche web** : activer `SERPER_API_KEY` et le tool est attaché automatiquement au *researcher*.
+- **Éducatif uniquement** — ce projet n’est **pas** un conseil financier.
+- Faites vos propres recherches (**DYOR**) et n’engagez que ce que vous pouvez vous permettre de perdre.
+- Les données & sources peuvent être incomplètes ou erronées.
 
 ---
 
-## 🧩 Bonnes pratiques / pièges évités
+## 🗺️ Roadmap courte
 
-- **Placeholders** : utilisez `{var}` **sans espaces** (ex: `{lang}`, **pas** `{ lang }`).  
-- **Sortie FR** : la langue est verrouillée **dans les agents et les tasks** pour éviter l’anglais.  
-- **Table technique** : **calculée côté code** → insérée **verbatim** (réduit les hallucinations).  
-- **Température** : certains modèles (p. ex. `gpt-5`) n’acceptent **pas** de température custom → le code s’adapte.  
-- **USDT vs USDC** : gardez une cohérence de cotation dans **tout** le pipeline.
-
----
-
-## 🔎 Dépannage
-
-- **`LLM Call Failed: Unsupported value: 'temperature'…`**  
-  ⇒ Le modèle ne supporte pas `temperature`. Le builder LLM ne la passera pas (patch inclus).  
-- **`'str' object has no attribute 'is_llm'`** en important `@llm`  
-  ⇒ Nous **n’utilisons pas** le décorateur `@llm` ; l’LLM est passé **en code** dans chaque agent.  
-- **Placeholders non interpolés** (`{tech_table_md}` affiché brut)  
-  ⇒ Vérifiez qu’il n’y a **pas d’espace** dans `{var}` et que les clés sont bien injectées en `@before_kickoff`.  
-- **Timezone (Windows)** : installez `tzdata` (`pip install tzdata`).
+- [ ] Backtests rapides sur règles “reclaim + RSI”
+- [ ] Export HTML/PDF du rapport
+- [ ] Tableau de bord léger (Streamlit) avec graphes EMA/RSI/ATR
+- [ ] Cache des requêtes de recherche (Serper) pour réduire les coûts
 
 ---
 
-## 🛡️ Sécurité
+## 🤝 Contribuer
 
-- **NE JAMAIS** committer votre `.env`.  
-- Les clés API (OpenAI/Serper/Binance, etc.) donnent accès à des services/fonds : protégez-les.
+PRs bienvenues ! Merci de :
+1. Créer une branche dédiée (`feat/...`, `fix/...`).
+2. Lancer la CI locale (`ruff` / dry‑run).
+3. Ouvrir une PR descriptive.
 
 ---
 
 ## 📜 Licence
 
-- Code/discussions fournis **à titre éducatif** et **sans garantie** (“as is”).  
-- Vous pouvez utiliser, modifier et forker librement à des fins d’apprentissage et de recherche.  
-- Toute utilisation en production se fait **à vos risques**.
-
----
-
-## 🙌 Contributions
-
-Les issues/PR d’amélioration pédagogique (meilleurs prompts, nouveaux indicateurs, validation tests) sont bienvenues.  
-Gardez l’esprit : **clarté**, **traçabilité**, **sécurité**.
-
-Bon apprentissage & bons marchés 🚀
+Ce projet est publié sous licence **MIT**. Voir le fichier `LICENSE`.
