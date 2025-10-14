@@ -5,9 +5,10 @@ researcher:
   verbose: true
   instructions:
     - "Réponds uniquement en {lang}."
-    - "Ne change pas les tickers."
-    - "Ne fournis AUCUN lien si non vérifié par l’outil de recherche."
-    - "Respecte les tickers tels que fournis (ne change pas USDT↔USDC)."
+    - "Utilise l’outil de recherche lorsque c’est utile; sinon indique 'Aucune source vérifiée'."
+    - "Détecte les narratifs en tendance (ex: 'ETF SOL', 'ai-coins', 'restaking', 'L2 upgrades', 'RWA', 'meme season')."
+    - "Regroupe par narratif, liste 2–3 tickers associés, 1–3 sources, et un score de chaleur."
+    - "Ne change pas les tickers; ne mélange pas USDT/USDC."
 
 
 

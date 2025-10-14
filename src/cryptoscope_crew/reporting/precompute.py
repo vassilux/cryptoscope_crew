@@ -203,55 +203,61 @@ def _pct_to_level(price: float, level: float) -> float:
         return 0.0
     return (level - price) / price * 100.0
 
+def _fmt_pct_signed(price: float, level: float) -> str:
+    if not price:
+        return "0%"
+    pct = (level - price) / price * 100.0
+    s = f"{pct:.2f}%"
+    return s.replace(".00%", "%")
+
 def ready_signals_from_context(context: dict, label: str | None = None) -> str:
     """
-    Génère une ligne par paire du timeframe `context` avec :
-      - distance % au reclaim EMA20 et EMA50,
-      - delta RSI vers 45 et 50 (seuils de momentum minimal),
-      - un tag 'À portée' si distance EMA20 < 0.5*ATR(14).
-    `label` (ex: '1d' ou '4h') est ajouté pour clarté.
+    Sortie compacte par paire :
+      - Etat vs EMA20/EMA50 : "déjà > ..." ou "X% à franchir"
+      - RSI : "≥45 ok"/"≥50 ok" sinon deltas "→45: x.xx pts"
+      - Tag 'À portée' si distance à EMA20 < 0.5×ATR(14)
     """
     tf = label or context.get("timeframe", "?")
     lines = [f"_Timeframe: {tf}_"]
     for p in context["pairs"]:
-        pair   = p["pair"]
-        close  = p["close"]
-        ema20  = p["ema_fast"]
-        ema50  = p["ema_slow"]
-        rsi    = p["rsi14"]
-        atr    = p.get("atr14", None)
+        pair  = p["pair"]
+        price = p["close"]
+        ema20 = p["ema_fast"]
+        ema50 = p["ema_slow"]
+        rsi   = p["rsi14"]
+        atr   = p.get("atr14", None)
 
-        # distances %
-        d_ema20 = _pct_to_level(close, ema20)
-        d_ema50 = _pct_to_level(close, ema50)
-        # deltas RSI
-        drsi45 = max(0.0, 45.0 - rsi)
-        drsi50 = max(0.0, 50.0 - rsi)
+        def ema_state(level: float) -> str:
+            if price > level:
+                return f"déjà > {level:.4f}"
+            return f"{_fmt_pct_signed(price, level)} à franchir"
+
+        s20 = ema_state(ema20)
+        s50 = ema_state(ema50)
 
         tag = ""
-        if atr is not None and close > 0:
-            # heuristique "à portée" : < 0.5*ATR
-            # On convertit 0.5*ATR en % du close ≈ (0.5*ATR / close)*100
-            atr_pct = (0.5 * atr) / close * 100.0
-            if abs(d_ema20) <= atr_pct:
+        if atr and price:
+            dist_pct = abs((ema20 - price) / price) * 100
+            half_atr_pct = (0.5 * atr / price) * 100
+            if price < ema20 and dist_pct <= half_atr_pct:
                 tag = " — **À portée**"
 
-        sign = "↑" if d_ema20 > 0 else "↓"  # si >0, il manque une hausse, si <0 on est déjà au-dessus
-        # Construction
-        part_price = (
-            f"Prix={close:.4f} | EMA20={ema20:.4f} ({_fmt_pct(d_ema20)}) | "
-            f"EMA50={ema50:.4f} ({_fmt_pct(d_ema50)}){tag}"
+        r45 = "≥45 ok" if rsi >= 45 else f"→45: {45 - rsi:.2f} pts"
+        r50 = "≥50 ok" if rsi >= 50 else f"→50: {50 - rsi:.2f} pts"
+
+        lines.append(
+            f"- **{pair}**  \n"
+            f"  • Prix={price:.4f} | EMA20: {s20} | EMA50: {s50}{tag}  \n"
+            f"  • RSI={rsi:.2f} ({r45}; {r50})"
         )
-        part_rsi = f"RSI={rsi:.2f} → 45: {drsi45:.2f} pts, → 50: {drsi50:.2f} pts"
-
-        lines.append(f"- **{pair}** {sign}  \n  • {part_price}  \n  • {part_rsi}")
     return "\n".join(lines)
-
 
 def ready_signals_multi(context_by_tf: dict, order: list[str] = None) -> str:
     order = order or ["1d", "4h", "1h"]
     blocks = []
     for tf in order:
-        if tf in context_by_tf:
-            blocks.append(ready_signals_from_context(context_by_tf[tf], tf))
+        ctx = context_by_tf.get(tf)
+        if ctx:
+            blocks.append(ready_signals_from_context(ctx, tf))
     return "\n\n".join(blocks)
+

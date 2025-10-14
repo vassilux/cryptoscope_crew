@@ -1,39 +1,54 @@
 scan_market:
   description: |
-    Réponds uniquement en {lang}. Si ta sortie contient de l’anglais, retraduis immédiatement en {lang}.
-    Date: {report_date}  Heure: {report_time}  ISO: {report_iso} (TZ: {tz})
-    Paires : {pairs_display} 
-    Timeframes: {timeframes_display}
+    Réponds uniquement en {lang}.
     {header_md}
-    (lookback={lookback})
-    Contexte JSON:
-    {context_json}
-    Mission: liste 3–5 catalyseurs (ETF, listings, upgrades L2, régulation) avec une phrase de résumé chacun.
-    Si l’outil de recherche a trouvé une source, cite-la ; sinon écris "Aucune source vérifiée".
+
+    Mission:
+    - Dresse 3–5 catalyseurs du jour (ETF, listings, upgrades L2, régulation/macro) avec une phrase de résumé chacun.
+    - Si l’outil de recherche a trouvé une source vérifiée, cite-la (1 lien max par bullet).
+    - Sinon, écris "Aucune source vérifiée".
   expected_output: '{"key_drivers":["..."]}'
+  agent: researcher
+
+narrative_scan:
+  description: |
+    Réponds uniquement en {lang}.
+    {header_md}
+
+    Utilise la recherche (24–72h) pour détecter 3–5 narratifs crypto “en tendance” :
+    - exemples: ETF SOL/ETH, L2 upgrades, AI-coins, RWA, memecoins, airdrops, restaking, inscriptions/BRC-20.
+    - privilégie des sources reconnues (CoinDesk, Blockworks, The Block, Bloomberg Crypto, CNBC Crypto, FT, WSJ, Messari).
+    - écarte blogs obscurs / fils X non vérifiables.
+
+    Heat scoring:
+    1 = bruit faible ; 2 = niche ; 3 = modéré (quelques sources) ;
+    4 = fort (plusieurs sources, tokens impliqués) ; 5 = très fort (flux mesurables, catalyse ≤72h).
+
+    Rends un JSON STRICT (sans texte autour) :
+    {"narratives":[
+      {"title":"...", "summary":"...", "tickers":["...","..."], "heat":4, "sources":["https://..."]},
+      {"title":"...", "summary":"...", "tickers":["..."], "heat":3, "sources":["https://..."]}
+    ]}
+  expected_output: '{"narratives":[{"title":"...", "summary":"...", "tickers":["..."], "heat":3, "sources":["..."]}]}'
   agent: researcher
 
 tech_review:
   description: |
-    Réponds uniquement en {lang}. Si ta sortie contient de l’anglais, retraduis immédiatement en {lang}.
-    Table technique (ne pas modifier) :
+    Réponds uniquement en {lang}.
+    {header_md}
 
-    Timeframes: {timeframes_display}
-
+    Table (timeframe principal — ne pas modifier) :
     -----
     {tech_table_md}
     -----
-    
+
     Synthèse multi-timeframe :
     -----
     {summary_table_md}
     -----
-
-    Tables des autres timeframes :
     {tech_tables_md}
 
-    Donne 3–5 observations techniques (tendance, momentum, divergences, invalidations).
-
+    Donne 3–5 observations techniques (tendance, momentum, divergences multi-TF, invalidations).
   expected_output: '{"tech_notes":["..."]}'
   agent: technician
 
@@ -41,13 +56,15 @@ reporting_task:
   description: |
     Réponds uniquement en {lang}. Sans blocs de code (pas de ```).
 
-    Commence ta réponse en reproduisant EXACTEMENT ce bloc :
+    Commence par reproduire EXACTEMENT ce bloc :
     ---
     {header_md}
     ---
 
-    Ensuite, retourne EXACTEMENT ces sections, une seule fois chacune, dans cet ordre :
-    "## Points clés", "## Configuration technique", "## Synthèse multi-timeframe", "## Triggers par paire", "## Signaux prêts à tirer", "## Risques", "## Watchlist".
+    Ensuite, retourne UNIQUEMENT ces sections, une seule fois chacune, dans cet ordre :
+
+    ## Points clés
+    - 3 bullets max, orientés décision, en français.
 
     ## Configuration technique
     -----
@@ -60,21 +77,26 @@ reporting_task:
     -----
     {tech_tables_md}
 
-    ## Triggers par paire
-    {triggers_md}
-
     ## Signaux prêts à tirer
     {ready_signals_md}
 
+    ## Triggers par paire
+    {triggers_md}
+
+    ## Narratifs en tendance
+    À partir des résultats de 'narrative_scan' (JSON), synthétise 3–5 bullets :
+    - Titre (Heat {1..5}) — 1 phrase — Tickers — 1 source max.
+    - Ne pas inventer de liens : cite uniquement ceux fournis par 'narrative_scan'.
+    - Si aucune source vérifiée pour un narratif, ne pas l’afficher.
+
     ## Risques
-    (complète selon le contexte)
+    (liste concise et spécifique)
 
     ## Watchlist
-    (complète selon le contexte)
+    (niveaux/événements à surveiller, concis)
 
     Contexte (référence) :
     {context_json}
   expected_output: "Markdown final du rapport."
   agent: reporting_analyst
   output_file: "{report_output_path}"
-

@@ -208,6 +208,8 @@ class CryptoscopeCrew:
             print(f"⚠️ precompute_multi failed: {e}. Fallback sur TF principal.")
             # fallbacks déjà posés
 
+        inputs.setdefault("narratives_md", "")
+
         # (debug facultatif)
         print("TF main:", tf_main)
         print("TIMEFRAMES:", os.getenv("TIMEFRAMES","<none>"))
@@ -264,6 +266,13 @@ class CryptoscopeCrew:
         )
 
     @task
+    def narrative_scan(self) -> Task:
+        return Task(
+            config=self.tasks_config["narrative_scan"],  
+            agent=self.researcher(),
+        )
+
+    @task
     def tech_review(self) -> Task:
         # Nécessite 'tech_review' dans tasks.yaml
         return Task(
@@ -280,13 +289,29 @@ class CryptoscopeCrew:
             output_file="report.md",  # génère un fichier à la fin (facile à retrouver)
         )
     
-    @task
-    def reporting_task(self) -> Task:
+    
+    
+    
+    def reporting_task_nono(self) -> Task:
         return Task(
             config=self.tasks_config["reporting_task"],
             agent=self.reporting_analyst(),
             output_file="{report_output_path}",
         )
+    
+    @task
+    def reporting_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["reporting_task"],
+            # ⬇️ on passe la sortie des tasks précédentes au writer
+            context=[
+                self.scan_market(),     # catalyseurs
+                self.narrative_scan(),  # narratifs
+                self.tech_review(),     # notes techniques
+            ],
+            output_file="{report_output_path}",  # ta fonction existante / ou {report_output_path}
+        )
+
 
     # -------------
     # Crew
@@ -295,11 +320,11 @@ class CryptoscopeCrew:
     def crew(self) -> Crew:
         """
         Crée la crew : process séquentiel (scan → tech → rédaction).
-        Si tu préfères un planner hiérarchique, passe à Process.hierarchical.
         """
         return Crew(
             agents=self.agents,  # auto-créés par les décorateurs @agent
             tasks=self.tasks,    # auto-créées par les décorateurs @task
-             process=Process.sequential,           
+            process=Process.sequential,           
             verbose=True,
+            
         )
