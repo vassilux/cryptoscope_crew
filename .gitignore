@@ -180,3 +180,6 @@ repors
 
 # Ignore Accounts database in capstone project
 /reports
+
+# Portfolio (données personnelles)
+portfolio.json

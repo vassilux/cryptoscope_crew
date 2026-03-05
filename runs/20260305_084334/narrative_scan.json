@@ -1,0 +1,74 @@
+{
+  "narratives": [
+    {
+      "title": "Afflux records sur les ETFs spot BTC US et rotation hors de l’or",
+      "summary": "Les ETFs spot BTC aux États‑Unis ont enregistré de fortes entrées nettes ces 48–72h (IBIT/FBTC en tête), tandis que les fonds or voient des sorties, indiquant une rotation de couverture vers le BTC. C’est un flux mesurable de court terme, soutenant le biais acheteur sur BTC et, par contagion, sur le complexe crypto aujourd’hui.",
+      "tickers": [
+        "BTC",
+        "IBIT",
+        "FBTC"
+      ],
+      "heat": 5,
+      "sources": [
+        "https://www.coindesk.com/markets/2026/03/04/bitcoin-etf-inflows-surge-as-btc-hits-new-highs/",
+        "https://www.coindesk.com/markets/2026/03/03/spot-bitcoin-etfs-record-another-day-of-net-inflows/",
+        "https://blockworks.co/news/bitcoin-etfs-billions-gold-outflows",
+        "https://www.cnbc.com/2026/03/04/bitcoin-etfs-see-strong-inflows-as-gold-funds-bleed-assets.html"
+      ]
+    },
+    {
+      "title": "Hong Kong accélère vers des ETFs spot Bitcoin",
+      "summary": "Les régulateurs de Hong Kong avancent sur un cadre susceptible d’autoriser des ETFs spot BTC, cherchant à attirer les émetteurs et à rivaliser avec les US. Potentiel catalyseur régional de flux institutionnels en Asie, favorable au tone intrajournalier sur BTC.",
+      "tickers": [
+        "BTC"
+      ],
+      "heat": 4,
+      "sources": [
+        "https://www.bloomberg.com/news/articles/2026-03-04/hong-kong-moves-closer-to-spot-bitcoin-etfs-amid-crypto-revival",
+        "https://www.ft.com/content/crypto-etf-hong-kong-march-2026"
+      ]
+    },
+    {
+      "title": "ETH spot ETF: attentes repoussées à court terme",
+      "summary": "Le silence de la SEC amène des analystes à décaler les probabilités d’approbation des ETFs spot ETH, ce qui bride le sentiment positif immédiat sur ETH. Risque d’underperformance relative d’ETH face à BTC tant que le calendrier reste flou.",
+      "tickers": [
+        "ETH",
+        "BTC"
+      ],
+      "heat": 3,
+      "sources": [
+        "https://www.theblock.co/post/318765/analysts-push-back-ethereum-spot-etf-timelines-amid-sec-silence"
+      ]
+    },
+    {
+      "title": "AI-coins en rallye, contagion risk-on vers les majors",
+      "summary": "Les tokens liés à l’IA (ex. FET, RNDR) ont surperformé ces 24–48h sur fond de thématique IA portée par les big techs, attirant des flux spéculatifs. Ce risque‑on peut soutenir la liquidité et le beta sur BTC/ETH à court terme.",
+      "tickers": [
+        "FET",
+        "RNDR",
+        "BTC",
+        "ETH"
+      ],
+      "heat": 3,
+      "sources": [
+        "https://www.coindesk.com/markets/2026/03/04/ai-linked-crypto-tokens-rally-as-nvidia-led-mania-spreads-to-crypto/"
+      ]
+    },
+    {
+      "title": "Retour des memecoins, signal retail et beta élevé",
+      "summary": "Les memecoins (DOGE, SHIB, BONK, surtout sur Solana) ont bondi avec le retour de flux retail et une hausse de l’activité on-chain. Ce régime de marché à beta élevé peut alimenter des rotations intrajournalières bénéfiques à BTC/ETH, sans catalyse identifié pour XRP.",
+      "tickers": [
+        "DOGE",
+        "SHIB",
+        "BONK",
+        "BTC",
+        "ETH",
+        "XRP"
+      ],
+      "heat": 3,
+      "sources": [
+        "https://www.theblock.co/post/318721/memecoins-surge-as-retail-flows-return-to-crypto-markets"
+      ]
+    }
+  ]
+}

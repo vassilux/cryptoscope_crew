@@ -1,0 +1,51 @@
+{
+  "as_of": "",
+  "base_currency": "USDC",
+  "cash": {
+    "symbol": "USDC",
+    "available": 0.0
+  },
+  "positions": [
+    {
+      "pair": "BTC/USDC",
+      "asset": "BTC",
+      "quantity": 0.0,
+      "avg_price": 0.0,
+      "core_pct": 70,
+      "swing_pct": 30,
+      "min_core_qty": 0.0
+    },
+    {
+      "pair": "ETH/USDC",
+      "asset": "ETH",
+      "quantity": 0.0,
+      "avg_price": 0.0,
+      "core_pct": 70,
+      "swing_pct": 30,
+      "min_core_qty": 0.0
+    },
+    {
+      "pair": "XRP/USDC",
+      "asset": "XRP",
+      "quantity": 0.0,
+      "avg_price": 0.0,
+      "core_pct": 70,
+      "swing_pct": 30,
+      "min_core_qty": 0.0
+    }
+  ],
+  "risk_limits": {
+    "cash_min_pct": 20,
+    "max_exposure_pct": {
+      "BTC/USDC": 35,
+      "ETH/USDC": 25,
+      "XRP/USDC": 10
+    },
+    "max_single_order_cash_pct": 12
+  },
+  "decision_defaults": {
+    "reduce_swing_pct_of_swing": 50,
+    "add_small_cash_pct": 5,
+    "buy_ladder_cash_pct": [6, 9, 12]
+  }
+}

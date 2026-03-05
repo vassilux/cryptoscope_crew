@@ -14,10 +14,41 @@ from crewai import LLM
 from crewai.project import llm as llm_decorator
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai_tools import SerperDevTool
+from litellm.exceptions import ContentPolicyViolationError
 
 from cryptoscope_crew.reporting.precompute import precompute, precompute_multi, ready_signals_from_context, ready_signals_multi, tech_table_from_context, triggers_from_context
+from cryptoscope_crew.journal import save_task_output, validate_narrative_scan
+from cryptoscope_crew.domain.portfolio import load_portfolio
+from cryptoscope_crew.domain.decision_engine import decide_all, decisions_to_markdown
+from cryptoscope_crew.domain.opportunities import OpportunityEngine, opportunities_to_markdown
 
 ALLOWS_TEMPERATURE = {"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o4-mini"}
+
+# Modèle de repli si le principal déclenche une ContentPolicyViolation
+_FALLBACK_MODEL = os.getenv("OPENAI_MODEL_FALLBACK", "gpt-4.1-mini")
+
+
+class _FallbackLLM(LLM):
+    """LLM avec fallback automatique sur ContentPolicyViolationError.
+
+    Si le modèle principal refuse le prompt (content-policy), on retente
+    une fois avec *_FALLBACK_MODEL* (env OPENAI_MODEL_FALLBACK).
+    """
+
+    def call(self, messages, **kwargs):
+        try:
+            return super().call(messages, **kwargs)
+        except ContentPolicyViolationError as exc:
+            original_model = self.model
+            print(
+                f"[WARN] ContentPolicyViolation avec {original_model}. "
+                f"Fallback -> {_FALLBACK_MODEL}"
+            )
+            self.model = _FALLBACK_MODEL
+            try:
+                return super().call(messages, **kwargs)
+            finally:
+                self.model = original_model  # restaure pour les appels suivants
 
 def _make_llm(model_env_fallback: str) -> LLM:
     model = os.getenv(model_env_fallback, os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"))
@@ -34,7 +65,7 @@ def _make_llm(model_env_fallback: str) -> LLM:
                 pass
         else:
             kwargs["temperature"] = 0.2
-    return LLM(**kwargs)
+    return _FallbackLLM(**kwargs)
 
 # le même modèle pour tous:
 def _llm_default() -> LLM:
@@ -112,9 +143,17 @@ class CryptoscopeCrew:
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
-            print(f"⚠️ TZ '{tz_name}' introuvable. Fallback: UTC")
+            print(f"[WARN] TZ '{tz_name}' introuvable. Fallback: UTC")
             tz = ZoneInfo("UTC"); tz_name = "UTC"
         now = datetime.now(tz)
+
+        run_id = now.strftime("%Y%m%d_%H%M%S")
+        run_dir = os.path.join("runs", run_id)
+        pathlib.Path(run_dir).mkdir(parents=True, exist_ok=True)
+
+        inputs["run_id"] = run_id
+        inputs["run_dir"] = run_dir
+        self._run_dir = run_dir          # accessible par les callbacks
 
         inputs.setdefault("lang", os.getenv("LANG", "fr"))
         inputs["tz"] = tz_name
@@ -151,6 +190,7 @@ class CryptoscopeCrew:
         outdir = inputs.get("output_dir", os.getenv("OUTPUT_DIR", "reports"))
         pathlib.Path(outdir).mkdir(parents=True, exist_ok=True)
         inputs["report_output_path"] = os.path.join(outdir, f"report_{now.strftime('%d%m%Y_%H%M')}.md")
+        self._report_output_path = inputs["report_output_path"]  # pour _cb_reporting
 
        # --- header prêt à coller
         inputs["header_md"] = (
@@ -204,11 +244,64 @@ class CryptoscopeCrew:
             inputs["summary_table_md"] = bundle.get("summary_table_md", "")
             inputs["context_by_tf_json"] = json.dumps(bundle["context_by_tf"], ensure_ascii=False)
 
+            # --- Decision Engine (déterministe) ---
+            try:
+                portfolio = load_portfolio()
+                # Enrichir avec les prix courants (depuis le TF principal)
+                prices = {p["pair"]: p["close"] for p in ctx_main.get("pairs", [])}
+                portfolio.enrich_all(prices)
+                decisions = decide_all(pairs, bundle["context_by_tf"], portfolio)
+                inputs["decisions_md"] = decisions_to_markdown(decisions)
+                # Sauvegarder dans run_dir
+                dec_path = os.path.join(run_dir, "decisions.json")
+                import pathlib as _p
+                _p.Path(dec_path).write_text(
+                    json.dumps([d.model_dump(mode="json") for d in decisions], indent=2, ensure_ascii=False),
+                    encoding="utf-8"
+                )
+                print(f"[OK] Decision engine: {len(decisions)} d\u00e9cisions -> {dec_path}")
+                self._decisions_md = inputs["decisions_md"]
+
+                # --- Top Opportunities (déterministe) ---
+                try:
+                    opps = OpportunityEngine.build_top3(
+                        bundle["context_by_tf"], portfolio, decisions,
+                    )
+                    inputs["opportunities_md"] = opportunities_to_markdown(opps)
+                    self._opportunities_md = inputs["opportunities_md"]
+                    # Sauvegarder dans run_dir
+                    opp_path = os.path.join(run_dir, "opportunities.json")
+                    _p.Path(opp_path).write_text(
+                        json.dumps([o.model_dump(mode="json") for o in opps], indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    print(f"[OK] Opportunities: {len(opps)} top -> {opp_path}")
+                except Exception as oe:
+                    print(f"[WARN] Opportunities engine failed: {oe}")
+                    inputs["opportunities_md"] = (
+                        "## Top Opportunities (V1)\n\n"
+                        f"Opportunities indisponibles (erreur: {oe})"
+                    )
+            except Exception as e:
+                print(f"[WARN] Decision engine failed: {e}")
+                inputs["decisions_md"] = (
+                    "## Decision Summary (V1)\n\n"
+                    f"Decision Summary indisponible (parsing error: {e})"
+                )
+
         except Exception as e:
-            print(f"⚠️ precompute_multi failed: {e}. Fallback sur TF principal.")
+            print(f"[WARN] precompute_multi failed: {e}. Fallback sur TF principal.")
             # fallbacks déjà posés
 
         inputs.setdefault("narratives_md", "")
+        inputs.setdefault(
+            "decisions_md",
+            "## Decision Summary (V1)\n\nDecision Summary indisponible (parsing error)",
+        )
+        inputs.setdefault(
+            "opportunities_md",
+            "## Top Opportunities (V1)\n\nAucune opportunité identifiée.",
+        )
 
         # (debug facultatif)
         print("TF main:", tf_main)
@@ -217,7 +310,45 @@ class CryptoscopeCrew:
         print("Len summary_table_md:", len(inputs["summary_table_md"]))
 
         return inputs
-   
+
+    # ------------------------------------------------------------------ #
+    #  Callbacks – run journal + validation
+    # ------------------------------------------------------------------ #
+    def _cb_scan_market(self, output) -> None:
+        """Sauvegarde brute de la sortie scan_market."""
+        save_task_output("scan_market", output.raw, self._run_dir)
+
+    def _cb_narrative_scan(self, output) -> None:
+        """Valide le JSON narrative_scan via Pydantic + sauvegarde."""
+        validated = validate_narrative_scan(output.raw, self._run_dir)
+        # Injecte le résultat validé comme attribut pour usage aval
+        self._narrative_validated = validated
+
+    def _cb_tech_review(self, output) -> None:
+        """Sauvegarde brute de la sortie tech_review."""
+        save_task_output("tech_review", output.raw, self._run_dir)
+
+    def _cb_reporting(self, output) -> None:
+        """Copie le report final + decisions dans run_dir ET reports/."""
+        import pathlib as _p
+        report = output.raw
+        # Append la section Decision Summary (déterministe, pas LLM)
+        decisions_md = getattr(self, "_decisions_md", "")
+        if decisions_md:
+            report = report.rstrip() + "\n\n" + decisions_md
+        opportunities_md = getattr(self, "_opportunities_md", "")
+        if opportunities_md:
+            report = report.rstrip() + "\n\n" + opportunities_md
+        # 1) Copie dans run_dir
+        dest = os.path.join(self._run_dir, "report.md")
+        _p.Path(dest).write_text(report, encoding="utf-8")
+        print(f"[FILE] Report copi\u00e9 -> {dest}")
+        # 2) Écraser le output_file (reports/) pour inclure le Decision Summary
+        report_output = getattr(self, "_report_output_path", "")
+        if report_output and _p.Path(report_output).exists():
+            _p.Path(report_output).write_text(report, encoding="utf-8")
+            print(f"[FILE] Report principal mis \u00e0 jour -> {report_output}")
+
     # -------------
     # Agents
     # -------------
@@ -262,7 +393,8 @@ class CryptoscopeCrew:
         # Nécessite 'scan_market' dans tasks.yaml
         return Task(
             config=self.tasks_config["scan_market"],  # type: ignore[index]
-            agent=self.researcher(),  # explicite si tu veux forcer l’agent
+            agent=self.researcher(),
+            callback=self._cb_scan_market,
         )
 
     @task
@@ -270,6 +402,7 @@ class CryptoscopeCrew:
         return Task(
             config=self.tasks_config["narrative_scan"],  
             agent=self.researcher(),
+            callback=self._cb_narrative_scan,
         )
 
     @task
@@ -278,6 +411,7 @@ class CryptoscopeCrew:
         return Task(
             config=self.tasks_config["tech_review"],  # type: ignore[index]
             agent=self.technician(),
+            callback=self._cb_tech_review,
         )
 
     
@@ -296,7 +430,7 @@ class CryptoscopeCrew:
         return Task(
             config=self.tasks_config["reporting_task"],
             agent=self.reporting_analyst(),
-            output_file="{report_output_path}",
+            output_file="{run_dir}/report.md",  # génère un fichier à la fin (facile à retrouver)
         )
     
     @task
@@ -309,7 +443,8 @@ class CryptoscopeCrew:
                 self.narrative_scan(),  # narratifs
                 self.tech_review(),     # notes techniques
             ],
-            output_file="{report_output_path}",  # ta fonction existante / ou {report_output_path}
+            output_file="{report_output_path}",  # reports/ directory
+            callback=self._cb_reporting,          # copie dans run_dir/
         )
 
 
