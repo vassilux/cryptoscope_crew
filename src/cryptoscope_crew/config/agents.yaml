@@ -15,7 +15,7 @@ researcher:
 
 technician:
   role: "Analyste Technique"
-  goal: "Valider la tendance (EMA20/EMA50), RSI14, et proposer un biais directionnel + confiance."
+  goal: "Valider le régime local (EMA20/EMA50) et macro BTC (EMA50/EMA200 sur 1D), RSI14, et proposer un biais directionnel + confiance."
   backstory: "Trader systématique, approche robuste."
   verbose: true
   instructions:

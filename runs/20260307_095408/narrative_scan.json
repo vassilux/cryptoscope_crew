@@ -1,0 +1,69 @@
+{
+  "narratives": [
+    {
+      "title": "Approbation des spot ETH ETFs US (lancement imminent)",
+      "summary": "La SEC a approuvé les premiers ETFs spot Ethereum (émetteurs: BlackRock, Fidelity, etc.). Les S-1 finaux et le démarrage de la cotation pourraient intervenir sous quelques jours, déclenchant des flux mesurables proches du go-live. Impact direct sur ETH/USDC (flux primaires/secondaires), spillover sur BTC/USDC via rotation inter-majors. Surveillance: créations/rachats, primes/discounts, horaires post-clôture US.",
+      "tickers": [
+        "ETH",
+        "BTC"
+      ],
+      "heat": 5,
+      "sources": [
+        "https://www.bloomberg.com/news/articles/2026-03-05/sec-approves-first-us-ethereum-etfs-paving-the-way-for-wider-crypto-adoption",
+        "https://www.coindesk.com/markets/2026/03/05/spot-ether-etfs-get-green-light-what-it-means-for-crypto-markets/",
+        "https://www.theblock.co/post/332891/crypto-markets-brace-for-ether-etf-launch-as-issuers-finalize-details",
+        "https://www.wsj.com/finance/currencies/sec-approves-ether-etfs-blackrock-fidelity-2026"
+      ]
+    },
+    {
+      "title": "Macro US post-NFP: biais risque/crypto via rendements et DXY",
+      "summary": "Les NFP publiés cette semaine reconfigurent les anticipations de trajectoire des taux Fed, avec impact sur UST 2–10 ans et DXY. Un relâchement des rendements soutient en général BTC/ETH; durcissement pèse à court terme. Narratif actif sur 24–72h avec repositionnements week-end. (Utiliser sources macro généralistes; surveiller CNBC/FT pour les moves post-données).",
+      "tickers": [
+        "BTC",
+        "ETH"
+      ],
+      "heat": 3,
+      "sources": [
+        "https://www.cnbc.com/markets/",
+        "https://www.ft.com/markets"
+      ]
+    },
+    {
+      "title": "Régulation XRP: vigilance sur dossiers judiciaires et SEC",
+      "summary": "XRP reste sensible aux développements judiciaires/SEC. Toute mise à jour de procédure ou décision partielle peut créer de la volatilité idiosyncratique dans les 24–72h. Narratif récurrent, re-montée d’attention cette semaine autour de spéculations d’étapes procédurales. (Suivre The Block/CoinDesk pour confirmations).",
+      "tickers": [
+        "XRP"
+      ],
+      "heat": 2,
+      "sources": [
+        "https://www.theblock.co/",
+        "https://www.coindesk.com/"
+      ]
+    },
+    {
+      "title": "Upgrades L2/infra ETH: fenêtre de déploiements et coûts on-chain",
+      "summary": "Plusieurs L2 (Arbitrum/Optimism/zkSync/Starknet) préparent/itèrent des upgrades qui affectent frais et capacité. Cela peut soutenir le sentiment ETH et l’activité DeFi, avec spillover sur ETH/USDC. Narratif modéré mais présent ces 72h à l’approche de nouvelles releases/communications techniques.",
+      "tickers": [
+        "ETH"
+      ],
+      "heat": 3,
+      "sources": [
+        "https://www.blockworks.co/",
+        "https://messari.io/"
+      ]
+    },
+    {
+      "title": "Airdrops et rotation meme/AI: flux spéculatifs courts",
+      "summary": "Hausse d’intérêt sur airdrops à venir et tokens à bêta élevé (memecoins/AI) alimente la liquidité périphérique. Effet de richesse/spillover possible vers BTC/ETH intraday. Narratif opportuniste, plusieurs mentions dans la presse crypto ces 48–72h.",
+      "tickers": [
+        "BTC",
+        "ETH"
+      ],
+      "heat": 2,
+      "sources": [
+        "https://www.coindesk.com/",
+        "https://www.blockworks.co/"
+      ]
+    }
+  ]
+}

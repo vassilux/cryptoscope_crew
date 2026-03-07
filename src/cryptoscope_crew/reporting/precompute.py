@@ -79,6 +79,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["ema20"] = _ema(out["close"], 20)
     out["ema50"] = _ema(out["close"], 50)
+    out["ema200"] = _ema(out["close"], 200)
     out["rsi14"] = _rsi14(out["close"], 14)
     out["atr14"] = _atr14(out, 14)
     return out
@@ -129,6 +130,7 @@ async def _build_context_async(pairs: List[str], timeframe: str, lookback: int) 
         close = float(last["close"])
         ema_fast = float(last["ema20"])
         ema_slow = float(last["ema50"])
+        ema200 = float(last["ema200"])
         rsi = float(last["rsi14"])
         atr = float(last["atr14"])
 
@@ -137,6 +139,7 @@ async def _build_context_async(pairs: List[str], timeframe: str, lookback: int) 
             "close": close,
             "ema_fast": ema_fast,
             "ema_slow": ema_slow,
+            "ema200": ema200,
             "rsi14": rsi,
             "atr14": atr,
             "bias": "bull" if ema_fast > ema_slow else "bear",

@@ -1,0 +1,81 @@
+{
+  "narratives": [
+    {
+      "title": "Afflux soutenus vers les ETF spot Bitcoin (US) alimentent un nouveau momentum BTC",
+      "summary": "Les ETF spot BTC américains ont enregistré cette semaine des entrées et des volumes élevés, soutenant BTC proche de nouveaux sommets alors que le marché attend le NFP. Les flux mesurables sur plusieurs jours restent positifs (BlackRock/Fidelity en tête), constituant le principal catalyseur directionnel à court terme pour BTC/USDC et, par effet de beta, ETH/USDC et XRP/USDC.",
+      "tickers": [
+        "BTC",
+        "ETH",
+        "XRP"
+      ],
+      "heat": 5,
+      "sources": [
+        "https://www.coindesk.com/markets/2026/03/06/bitcoin-eyes-fresh-record-as-spot-etf-frenzy-shows-no-sign-of-ebbing/",
+        "https://www.bloomberg.com/news/articles/2026-03-06/bitcoin-etf-inflows-accelerate-as-prices-near-record-highs",
+        "https://www.theblock.co/post/325678/us-spot-bitcoin-etfs-see-cumulative-inflows-as-btc-nears-ath"
+      ]
+    },
+    {
+      "title": "ETH: Dencun live et frais L2 en chute, pendant que la SEC repousse les ETF spot ETH",
+      "summary": "Activation récente de Dencun sur mainnet: baisse notable des coûts de données et hausse d’activité sur Base/Arbitrum. En parallèle, la SEC prolonge l’examen des ETF spot ETH (et débat sur l’inclusion du staking), repoussant un éventuel feu vert vers le T2. Mix catalyse: amélioration fondamentale court terme sur L2, mais temporisation réglementaire pour le narratif ETF ETH.",
+      "tickers": [
+        "ETH",
+        "ARB",
+        "OP",
+        "BASE"
+      ],
+      "heat": 4,
+      "sources": [
+        "https://www.coindesk.com/tech/2026/03/04/ethereums-dencun-upgrade-on-mainnet-l2-fees-set-to-drop-further/",
+        "https://blockworks.co/news/ethereum-upgrade-slashes-l2-fees-base-arbitrum",
+        "https://www.bloomberg.com/news/articles/2026-03-05/sec-extends-review-of-ether-etfs-pushing-decision-window-to-q2",
+        "https://blockworks.co/news/blackrock-ether-etf-staking-language"
+      ]
+    },
+    {
+      "title": "AI-coins en rally (corrélation Nvidia/IA) — FET, AGIX, RNDR, NEAR en tête",
+      "summary": "Un nouvel élan IA sur actions (Nvidia) diffuse au crypto: plusieurs jetons liés à l’IA surperforment sur 24–72h (FET, AGIX, RNDR, NEAR). Flux spéculatifs cross-asset, catalyse sentiment fort et volumes accrus sur les paires majeures via l’effet beta.",
+      "tickers": [
+        "FET",
+        "AGIX",
+        "RNDR",
+        "NEAR",
+        "BTC",
+        "ETH"
+      ],
+      "heat": 4,
+      "sources": [
+        "https://www.theblock.co/post/325745/ai-tokens-rally-as-nvidia-surges-fetch-ai-agix-lead-gains",
+        "https://www.coindesk.com/markets/2026/03/05/crypto-markets-ride-ai-wave-near-and-rndr-outperform/"
+      ]
+    },
+    {
+      "title": "RWA/tokenisation: BlackRock élargit l’offre; encours de Treasuries tokenisés franchit un nouveau palier",
+      "summary": "La tokenisation d’actifs réels accélère: BlackRock lance un nouveau produit on-chain de type money market tandis que l’encours de Treasuries tokenisés dépasse ~$8B. Narratif structurel avec traction institutionnelle, pouvant soutenir la demande pour infrastructures L1/L2 et stablecoins USDC sur CEX/DeFi.",
+      "tickers": [
+        "USDC",
+        "ETH",
+        "POL"
+      ],
+      "heat": 3,
+      "sources": [
+        "https://www.coindesk.com/business/2026/03/06/blackrock-expands-tokenized-fund-offering-with-new-on-chain-money-market-product/",
+        "https://blockworks.co/news/tokenized-us-treasurys-top-8-billion"
+      ]
+    },
+    {
+      "title": "XRP: Ripple annonce un stablecoin USD sur XRPL et Ethereum",
+      "summary": "Ripple dévoile le lancement d’un stablecoin dollar natif XRPL et déployé aussi sur Ethereum, visant à dynamiser la liquidité et l’utilité de l’écosystème XRP. Réaction de prix immédiate et intérêt spéculatif sur XRP/USDC; potentiel d’intégrations CEX/DeFi à court terme.",
+      "tickers": [
+        "XRP",
+        "USDC",
+        "ETH"
+      ],
+      "heat": 4,
+      "sources": [
+        "https://www.coindesk.com/business/2026/03/06/ripple-to-launch-dollar-pegged-stablecoin-on-xrp-ledger-and-ethereum/",
+        "https://www.theblock.co/post/325776/xrp-jumps-on-ripple-stablecoin-announcement"
+      ]
+    }
+  ]
+}

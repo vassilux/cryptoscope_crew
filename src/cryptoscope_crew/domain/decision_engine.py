@@ -27,6 +27,7 @@ from cryptoscope_crew.domain.portfolio import Position
 
 if TYPE_CHECKING:
     from cryptoscope_crew.domain.portfolio import Portfolio
+    from cryptoscope_crew.domain.regime import MarketRegime, RegimeResult
 
 
 # ------------------------------------------------------------------ #
@@ -34,11 +35,12 @@ if TYPE_CHECKING:
 # ------------------------------------------------------------------ #
 
 class Action(str, Enum):
-    REDUCE_SWING = "REDUCE_SWING"
-    DEFENSIVE    = "DEFENSIVE"
-    HOLD_OR_ADD  = "HOLD_OR_ADD"
-    ADD_SMALL    = "ADD_SMALL"
-    WAIT         = "WAIT"
+    REDUCE_SWING   = "REDUCE_SWING"
+    DEFENSIVE      = "DEFENSIVE"
+    HOLD_OR_ADD    = "HOLD_OR_ADD"
+    ADD_SMALL      = "ADD_SMALL"
+    REBUILD_LADDER = "REBUILD_LADDER"
+    WAIT           = "WAIT"
 
 
 class DecisionResult(BaseModel):
@@ -212,15 +214,25 @@ def decide(
     pair: str,
     context_by_tf: Dict[str, dict],
     position: Optional[Position] = None,
+    *,
+    regime: Optional["RegimeResult"] = None,
 ) -> DecisionResult:
     """Applique les règles déterministes V1 et retourne un DecisionResult.
 
     context_by_tf peut être construit soit par precompute_multi(),
     soit par parse_md_tables().
+
+    If *regime* is provided, 1D bias is taken from the regime detector
+    (EMA50/EMA200 macro view) instead of being derived from the 1D
+    context EMA20/EMA50.  This keeps the macro regime as the single
+    source of truth.
     """
 
     # --- récupère les biais & RSI par TF disponible ---
-    b1d = _bias(context_by_tf["1d"], pair) if "1d" in context_by_tf else "?"
+    if regime is not None:
+        b1d = regime.regime.value.capitalize()  # "Bull" / "Bear" / "Range"
+    else:
+        b1d = _bias(context_by_tf["1d"], pair) if "1d" in context_by_tf else "?"
     b4h = _bias(context_by_tf["4h"], pair) if "4h" in context_by_tf else "?"
     b1h = _bias(context_by_tf["1h"], pair) if "1h" in context_by_tf else "?"
 
@@ -290,6 +302,23 @@ def decide(
             rule_id="R3",
         )
 
+    # --- R4 : rebond haussier avec pullback 1H (achat échelonné) ---
+    if b1d == "Bull" and b4h == "Bear" and b1h == "Bear" and rsi_1h < 40:
+        return DecisionResult(
+            **base,
+            suggested_action=Action.REBUILD_LADDER,
+            adjustment_pct=None,
+            reentry_zone=f"EMA20 4H ({ema20_4h:.4f})",
+            invalidation=f"Clôture 1D sous EMA50 1D",
+            rationale=(
+                f"Daily haussier mais pullback profond sur 4H/1H. "
+                f"RSI 1H faible ({rsi_1h:.1f}). "
+                f"Opportunité de reconstruire un buy-ladder échelonné "
+                f"autour de EMA20 4H."
+            ),
+            rule_id="R4",
+        )
+
     # --- R5 : fallback ---
     watch = None
     if ema20_4h:
@@ -315,6 +344,7 @@ def decide_all(
     context_by_tf: Optional[Dict[str, dict]] = None,
     portfolio: Optional["Portfolio"] = None,
     *,
+    regimes: Optional[List["RegimeResult"]] = None,
     tech_table_md: str = "",
     tech_tables_md: str = "",
     main_tf: str = "1d",
@@ -324,16 +354,24 @@ def decide_all(
     Accepte *soit* un context_by_tf pré-construit, *soit* les tables MD
     brutes (tech_table_md + tech_tables_md). Si les deux sont fournis,
     context_by_tf est prioritaire.
+
+    If *regimes* is provided, each pair's 1D bias is taken from the
+    corresponding RegimeResult (EMA50/EMA200 macro view).
     """
     from cryptoscope_crew.domain.portfolio import Portfolio
 
     if context_by_tf is None:
         context_by_tf = parse_md_tables(tech_table_md, tech_tables_md, main_tf)
 
+    regime_map: Dict[str, "RegimeResult"] = {}
+    if regimes:
+        regime_map = {r.pair: r for r in regimes}
+
     results = []
     for pair in pairs:
         pos = portfolio.get(pair) if portfolio else None
-        results.append(decide(pair, context_by_tf, pos))
+        reg = regime_map.get(pair)
+        results.append(decide(pair, context_by_tf, pos, regime=reg))
     return results
 
 

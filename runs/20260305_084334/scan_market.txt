@@ -1,7 +1,0 @@
-{"key_drivers":[
-"- ETF BTC (US): fortes entrées nettes récentes (~$1,27 Md le 3 mars), soutenant le biais acheteur sur BTC et le complexe crypto aujourd’hui. Source: https://news.bitcoin.com/bitcoin-etfs-rise-to-the-top-of-the-charts-as-us-investors-pour-in/",
-"- ETH ETF spot: sentiment de marché orienté vers un calendrier 2026 plutôt que proche terme, ce qui peut contenir les anticipations positives à court terme sur ETH. Source: https://www.fxstreet.com/cryptocurrencies/news/is-there-hope-for-ethereum-etfs-this-year-heres-what-to-expect-20260305",
-"- Flux rotation macro: narratif d’allocation sortant de l’or vers les ETFs BTC aux US (changement de paradigme de couverture), facteur de soutien pour BTC/USDC intrajournalier. Source: https://news.bitcoin.com/bitcoin-etfs-gain-ground-as-cash-flees-gold-funds-marking-a-paradigm-shift-in-u-s-markets/",
-"- Hong Kong/Chine: signaux favorables autour d’une adoption des ETFs BTC à HK, catalyseur d’expansion régionale des flux institutionnels. Source: https://www.coinspeaker.com/crypto-news-china-supports-hong-kongs-bitcoin-etf-adoption-macro-tailwinds-in-focus/",
-"- XRP: pas de développement réglementaire/listing majeur confirmé ce matin impactant la paire XRP/USDC. Aucune source vérifiée"
-]}

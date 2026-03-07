@@ -1,0 +1,7 @@
+{"key_drivers":[
+  "ETF US (BTC/ETH) – Surveillance des flux/journées de rachat/création pouvant impacter la direction intraday, surtout après la clôture US et au rollover du week-end. Aucune source vérifiée",
+  "Macro US – Les données emploi (NFP) et les anticipations de trajectoire des taux Fed influencent l’appétit pour le risque crypto; surveiller DXY et UST 2–10 ans pour le biais sur BTC/ETH. Aucune source vérifiée",
+  "Régulation – Éventuelles mises à jour SEC/ETF crypto, décisions judiciaires liées à Ripple/XRP ou implémentation MiCA en Europe pouvant créer de la volatilité spécifique sur XRP/USDC. Aucune source vérifiée",
+  "Listings/Perps – Annonces de listings spot ou nouveaux contrats perpétuels sur Binance/Coinbase/Bybit peuvent déclencher un flux directionnel et hausser le volume croisé sur BTC/USDC et ETH/USDC. Aucune source vérifiée",
+  "Upgrades L2/infra – Déploiements ou upgrades (Arbitrum/Optimism/zkSync/Starknet) susceptibles de modifier les coûts/volumes on-chain et le sentiment ETH, avec spillover sur ETH/USDC. Aucune source vérifiée"
+]}

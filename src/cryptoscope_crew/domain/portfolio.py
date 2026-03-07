@@ -54,11 +54,29 @@ class Position(BaseModel):
         return self
 
 
+class RiskLimits(BaseModel):
+    """Contraintes de risque spot — chargées depuis portfolio.json."""
+
+    cash_min_pct: float = Field(default=20.0, ge=0, le=100)
+    max_exposure_pct: Dict[str, float] = Field(default_factory=dict)
+    max_single_order_cash_pct: float = Field(default=12.0, ge=0, le=100)
+
+
+class DecisionDefaults(BaseModel):
+    """Valeurs par défaut pour le moteur de décision spot."""
+
+    reduce_swing_pct_of_swing: float = Field(default=50.0, ge=0, le=100)
+    add_small_cash_pct: float = Field(default=5.0, ge=0, le=100)
+    buy_ladder_cash_pct: List[float] = Field(default_factory=lambda: [6.0, 9.0, 12.0])
+
+
 class Portfolio(BaseModel):
-    """Portefeuille complet : positions + cash."""
+    """Portefeuille complet : positions + cash + contraintes spot."""
 
     cash_usdc: float = Field(default=0.0, ge=0)
     positions: List[Position] = Field(default_factory=list)
+    risk_limits: RiskLimits = Field(default_factory=RiskLimits)
+    defaults: DecisionDefaults = Field(default_factory=DecisionDefaults)
 
     # --- helpers ---
 
@@ -120,6 +138,14 @@ def _normalize_data(data: dict) -> dict:
         if "min_core_qty" in p:
             pos["min_core_qty"] = p["min_core_qty"]
         out["positions"].append(pos)
+
+    # --- risk_limits ---
+    if isinstance(data.get("risk_limits"), dict):
+        out["risk_limits"] = data["risk_limits"]
+
+    # --- decision_defaults ---
+    if isinstance(data.get("decision_defaults"), dict):
+        out["defaults"] = data["decision_defaults"]
 
     return out
 

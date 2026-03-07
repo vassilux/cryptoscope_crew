@@ -21,6 +21,10 @@ from cryptoscope_crew.journal import save_task_output, validate_narrative_scan
 from cryptoscope_crew.domain.portfolio import load_portfolio
 from cryptoscope_crew.domain.decision_engine import decide_all, decisions_to_markdown
 from cryptoscope_crew.domain.opportunities import OpportunityEngine, opportunities_to_markdown
+from cryptoscope_crew.domain.regime import MarketRegimeDetector
+from cryptoscope_crew.domain.macro_regime import BtcMacroRegimeDetector, MacroRegime
+from cryptoscope_crew.domain.signal_engine import SignalEngine
+from cryptoscope_crew.domain.portfolio_strategy import PortfolioStrategyEngine, portfolio_strategy_to_markdown
 
 ALLOWS_TEMPERATURE = {"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o4-mini"}
 
@@ -250,7 +254,18 @@ class CryptoscopeCrew:
                 # Enrichir avec les prix courants (depuis le TF principal)
                 prices = {p["pair"]: p["close"] for p in ctx_main.get("pairs", [])}
                 portfolio.enrich_all(prices)
-                decisions = decide_all(pairs, bundle["context_by_tf"], portfolio)
+
+                # --- Regime detection ---
+                # Local regimes (EMA20/EMA50 per pair)
+                regimes = MarketRegimeDetector.detect_all(pairs, bundle["context_by_tf"])
+                # Macro regimes (EMA50/EMA200 BTC-led hierarchy)
+                macro_regimes = BtcMacroRegimeDetector.detect_all(pairs, bundle["context_by_tf"])
+                btc_macro = next(
+                    (m.macro for m in macro_regimes if m.pair.split("/")[0].upper() == "BTC"),
+                    MacroRegime.TRANSITION,
+                )
+
+                decisions = decide_all(pairs, bundle["context_by_tf"], portfolio, regimes=regimes)
                 inputs["decisions_md"] = decisions_to_markdown(decisions)
                 # Sauvegarder dans run_dir
                 dec_path = os.path.join(run_dir, "decisions.json")
@@ -282,6 +297,33 @@ class CryptoscopeCrew:
                         "## Top Opportunities (V1)\n\n"
                         f"Opportunities indisponibles (erreur: {oe})"
                     )
+
+                # --- Portfolio Strategy (déterministe) ---
+                try:
+                    # regimes already computed above (local + macro)
+                    signals = SignalEngine.analyze_all(
+                        pairs, bundle["context_by_tf"], regimes,
+                        btc_macro=btc_macro,
+                    )
+                    strategy = PortfolioStrategyEngine.build(
+                        portfolio, regimes, signals, decisions, bundle["context_by_tf"],
+                        macro_regimes=macro_regimes,
+                    )
+                    inputs["portfolio_strategy_md"] = portfolio_strategy_to_markdown(strategy)
+                    self._portfolio_strategy_md = inputs["portfolio_strategy_md"]
+                    # Sauvegarder dans run_dir
+                    strat_path = os.path.join(run_dir, "portfolio_strategy.json")
+                    _p.Path(strat_path).write_text(
+                        json.dumps(strategy.model_dump(mode="json"), indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    print(f"[OK] Portfolio strategy: {len(strategy.positions)} positions -> {strat_path}")
+                except Exception as se:
+                    print(f"[WARN] Portfolio strategy engine failed: {se}")
+                    inputs["portfolio_strategy_md"] = (
+                        "## Spot Portfolio Strategy\n\n"
+                        f"Portfolio strategy indisponible (erreur: {se})"
+                    )
             except Exception as e:
                 print(f"[WARN] Decision engine failed: {e}")
                 inputs["decisions_md"] = (
@@ -301,6 +343,10 @@ class CryptoscopeCrew:
         inputs.setdefault(
             "opportunities_md",
             "## Top Opportunities (V1)\n\nAucune opportunité identifiée.",
+        )
+        inputs.setdefault(
+            "portfolio_strategy_md",
+            "## Spot Portfolio Strategy\n\nPortfolio strategy indisponible.",
         )
 
         # (debug facultatif)
@@ -339,6 +385,9 @@ class CryptoscopeCrew:
         opportunities_md = getattr(self, "_opportunities_md", "")
         if opportunities_md:
             report = report.rstrip() + "\n\n" + opportunities_md
+        portfolio_strategy_md = getattr(self, "_portfolio_strategy_md", "")
+        if portfolio_strategy_md:
+            report = report.rstrip() + "\n\n" + portfolio_strategy_md
         # 1) Copie dans run_dir
         dest = os.path.join(self._run_dir, "report.md")
         _p.Path(dest).write_text(report, encoding="utf-8")

@@ -1,0 +1,70 @@
+{
+  "narratives": [
+    {
+      "title": "Afflux record des ETF Bitcoin US (semaine la plus forte depuis janvier)",
+      "summary": "Les ETFs spot BTC US ont enregistré ≈450 M$ d’entrées vendredi, scellant la semaine la plus forte depuis janvier et propulsant BTC vers ~75k$. Catalyseur mesurable à très court terme sur le prix et la volatilité (1h/4h).",
+      "tickers": [
+        "BTC"
+      ],
+      "heat": 5,
+      "sources": [
+        "https://www.coindesk.com/markets/2026/03/07/bitcoin-etfs-log-strongest-weekly-inflows-since-january/",
+        "https://www.bloomberg.com/news/articles/2026-03-06/u-s-bitcoin-etfs-see-450-million-inflows-as-price-approaches-75-000"
+      ]
+    },
+    {
+      "title": "Rally des AI-coins (FET/AGIX/RNDR) porté par le narratif IA",
+      "summary": "Les tokens liés à l’IA surperforment sur 24–48h, avec des flux spéculatifs sur l’infrastructure IA on-chain. Momentum cross-market confirmé, susceptible d’entrainer des rotations rapides sur 1h/4h.",
+      "tickers": [
+        "FET",
+        "AGIX",
+        "RNDR"
+      ],
+      "heat": 4,
+      "sources": [
+        "https://www.coindesk.com/markets/2026/03/06/ai-linked-tokens-outperform-as-traders-pile-into-narrative/",
+        "https://blockworks.co/news/ai-tokens-rally-march-2026"
+      ]
+    },
+    {
+      "title": "Upgrades L2 (Optimism Superchain, proposition Arbitrum)",
+      "summary": "Optimism a déployé une mise à niveau ajoutant des features Superchain (interop/perf), tandis qu’Arbitrum propose un upgrade visant davantage de débit et des frais plus bas sur Orbit. Potentiel d’activité accrue et de TVL/volumes à court terme.",
+      "tickers": [
+        "OP",
+        "ARB"
+      ],
+      "heat": 4,
+      "sources": [
+        "https://www.coindesk.com/tech/2026/03/05/optimisms-superchain-adds-new-features-in-latest-upgrade/",
+        "https://blockworks.co/news/arbitrum-upgrade-throughput-fees-march-2026"
+      ]
+    },
+    {
+      "title": "Memecoins surperforment avec le retour des flux retail",
+      "summary": "DOGE, SHIB et PEPE mènent une hausse marquée sur 24–48h, avec volumes en forte progression sur les bourses majeures. Narratif cyclique à haute bêta, sensible aux impulsions BTC/ETH.",
+      "tickers": [
+        "DOGE",
+        "SHIB",
+        "PEPE"
+      ],
+      "heat": 4,
+      "sources": [
+        "https://www.theblock.co/post/350050/memecoins-outperform-majors-retail-flows-return",
+        "https://www.coindesk.com/markets/2026/03/07/dogecoin-leads-memecoin-rally-as-retail-interest-picks-up/"
+      ]
+    },
+    {
+      "title": "RWA: Trésoreries tokenisées à un ATH d’AUM",
+      "summary": "Les produits on-chain adossés à des bons du Trésor atteignent un sommet d’AUM cette semaine sur Ethereum et Solana, soutenant le thème RWA et l’appétit pour le rendement on-chain.",
+      "tickers": [
+        "ONDO",
+        "ETH",
+        "SOL"
+      ],
+      "heat": 3,
+      "sources": [
+        "https://www.theblock.co/post/350030/tokenized-treasuries-hit-new-high-as-yields-remain-elevated"
+      ]
+    }
+  ]
+}

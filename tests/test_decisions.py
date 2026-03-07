@@ -96,6 +96,32 @@ class TestPortfolio:
         p = load_portfolio()
         assert len(p.positions) == 0
 
+    def test_risk_limits_loaded(self):
+        """risk_limits and decision_defaults are loaded from portfolio.json."""
+        os.environ["PORTFOLIO_JSON"] = json.dumps({
+            "cash_usdc": 500,
+            "positions": [],
+            "risk_limits": {"cash_min_pct": 25, "max_single_order_cash_pct": 10},
+            "decision_defaults": {"reduce_swing_pct_of_swing": 40, "add_small_cash_pct": 3},
+        })
+        p = load_portfolio()
+        assert p.risk_limits.cash_min_pct == 25
+        assert p.risk_limits.max_single_order_cash_pct == 10
+        assert p.defaults.reduce_swing_pct_of_swing == 40
+        assert p.defaults.add_small_cash_pct == 3
+        os.environ.pop("PORTFOLIO_JSON", None)
+
+    def test_risk_limits_defaults(self):
+        """Without risk_limits in JSON, defaults apply."""
+        os.environ["PORTFOLIO_JSON"] = json.dumps({
+            "cash_usdc": 500, "positions": [],
+        })
+        p = load_portfolio()
+        assert p.risk_limits.cash_min_pct == 20.0
+        assert p.defaults.add_small_cash_pct == 5.0
+        assert p.defaults.buy_ladder_cash_pct == [6.0, 9.0, 12.0]
+        os.environ.pop("PORTFOLIO_JSON", None)
+
 
 # ================================================================== #
 #  MD table parser tests
@@ -191,6 +217,18 @@ class TestDecisionRules:
         d = decide("SOL/USDC", ctx_mixed)
         assert d.suggested_action == Action.WAIT
         assert d.rule_id == "R5"
+
+    def test_r4_rebuild_ladder(self):
+        """1D Bull + 4H Bear + 1H Bear + RSI 1H < 40 → REBUILD_LADDER (R4)."""
+        ctx_pullback = {
+            "1d": {"pairs": [{"pair": "ETH/USDC", "close": 3200, "ema_fast": 3300, "ema_slow": 3100, "rsi14": 58, "atr14": 100, "bias": "bull"}]},
+            "4h": {"pairs": [{"pair": "ETH/USDC", "close": 3200, "ema_fast": 3100, "ema_slow": 3300, "rsi14": 42, "atr14": 50, "bias": "bear"}]},
+            "1h": {"pairs": [{"pair": "ETH/USDC", "close": 3200, "ema_fast": 3150, "ema_slow": 3250, "rsi14": 35, "atr14": 20, "bias": "bear"}]},
+        }
+        d = decide("ETH/USDC", ctx_pullback)
+        assert d.suggested_action == Action.REBUILD_LADDER
+        assert d.rule_id == "R4"
+        assert "ladder" in d.rationale.lower() or "pullback" in d.rationale.lower()
 
 
 # ================================================================== #

@@ -1,0 +1,57 @@
+{
+  "positions": [
+    {
+      "pair": "BTC/USDC",
+      "quantity": 0.02236091,
+      "avg_price": 72575.67,
+      "current_price": 68028.53,
+      "pnl_pct": -6.27,
+      "strategy": "WAIT",
+      "adjustment": "Watch EMA20 4H (69421.8937) as potential entry; risk below EMA50 4H (68828.9744)",
+      "regime": "BEAR",
+      "signal": "sell bounce (fading)",
+      "rationale": "No clear directional setup (sell bounce (fading)). Maintain current position, wait for confirmation.",
+      "key_levels": {
+        "EMA20_4H": "69421.8937",
+        "EMA50_4H": "68828.9744"
+      }
+    },
+    {
+      "pair": "ETH/USDC",
+      "quantity": 0.53006034,
+      "avg_price": 2129.33,
+      "current_price": 1986.69,
+      "pnl_pct": -6.7,
+      "strategy": "WAIT",
+      "adjustment": "Watch EMA20 4H (2026.9315) as potential entry; risk below EMA50 4H (2015.2015)",
+      "regime": "BEAR",
+      "signal": "sell bounce (fading)",
+      "rationale": "No clear directional setup (sell bounce (fading)). Maintain current position, wait for confirmation.",
+      "key_levels": {
+        "EMA20_4H": "2026.9315",
+        "EMA50_4H": "2015.2015"
+      }
+    },
+    {
+      "pair": "XRP/USDC",
+      "quantity": 331.1,
+      "avg_price": 1.42,
+      "current_price": 1.3667,
+      "pnl_pct": -3.75,
+      "strategy": "DEFENSIVE",
+      "adjustment": "No new adds; avoid adding until Reclaim EMA50 4H (1.3881) + RSI 4H > 55",
+      "regime": "BEAR",
+      "signal": "full bear",
+      "rationale": "Bearish alignment (full bear). Protect existing position, no additions.",
+      "key_levels": {
+        "EMA20_4H": "1.3854",
+        "EMA50_4H": "1.3881"
+      }
+    }
+  ],
+  "cash_usdc": 2821.14561135,
+  "total_value": 5847.905394986899,
+  "cash_pct": 48.2,
+  "overall_regime": "BEAR",
+  "summary": "Overall regime: BEAR. Cash: 2821.15 USDC (48%). 1 DEFENSIVE"
+}

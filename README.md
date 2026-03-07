@@ -5,63 +5,126 @@
 ![CrewAI](https://img.shields.io/badge/Agentic-CrewAI-5a67d8)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> **Projet éducatif & de recherche** sur l’analyse du marché crypto, basé sur un *crew* d’agents (CrewAI) qui combinent **analyse technique multi‑timeframes**, **narratifs “hype”** (recherche web) et **rapport quotidien** en Markdown.  
-> ⚠️ _Aucune recommandation d’investissement. Utilisation à vos risques._
+> **Projet educatif & de recherche** -- assistant de decision de portefeuille **SPOT-ONLY** pour le marche crypto.
+> Combine analyse technique multi-timeframes, detection de regime de marche, moteur de decision deterministe et rapports Markdown automatises.
+> :warning: _Aucune recommandation d'investissement. Utilisation a vos risques._
 
 ---
 
-## ✨ Fonctionnalités
+## Identite
 
-- **Multi‑timeframes** (par défaut: `1d, 4h, 1h`) avec table TA par TF : `Close, EMA20, EMA50, RSI14, ATR14`.
-- **Synthèse d’alignement** (Bull/Bear/Neutral par TF) + **“Signaux prêts à tirer”** (distances EMA/RSI avec heuristique _À portée_ via ATR).
-- **Narratifs en tendance (24–72h)**: scan des thèmes (ETF, L2, RWA, AI‑coins, memecoins, airdrops…) avec **sources vérifiées** (Serper).
-- **Rapport Markdown** horodaté (TZ configurable) avec sections normalisées :
-  - `Points clés` • `Configuration technique` • `Synthèse multi‑timeframe`
-  - `Signaux prêts à tirer` • `Triggers par paire`
-  - `Narratifs en tendance` • `Risques` • `Watchlist`
-- **Entièrement en français** (ou selon `{lang}`), reproductible, et **orienté spot / renforcement sur force**.
+| | |
+|---|---|
+| **Nom** | `cryptoscope_crew` |
+| **Version** | 0.1.0 |
+| **Langage** | Python 3.12, framework **CrewAI** (agents IA sequentiels) |
+| **Licence** | MIT |
+| **Taille** | 24 fichiers source (~3 130 lignes), 3 fichiers de tests (76 tests, tous verts) |
 
 ---
 
-## 🧱 Architecture (vue rapide)
+## Architecture en couches
 
 ```
-cryptoscope_crew/
-├─ src/cryptoscope_crew/
-│  ├─ crew.py                 # Définition du Crew, agents & tasks, injection des inputs
-│  ├─ market/                 # Routines marché (OHLCV, indicateurs)
-│  ├─ reporting/
-│  │  ├─ precompute.py        # Pré‑calcul TA, tables, triggers, “signaux prêts à tirer”
-│  │  └─ …
-│  └─ …
-├─ agents.yaml                # Rôles des agents (researcher, technician, reporting_analyst)
-├─ tasks.yaml                 # Tâches (scan_market, narrative_scan, tech_review, reporting_task)
-├─ reports/                   # Rapports générés (ignoré par git)
-└─ ...
++--------------------------------------------------------------+
+|                     CrewAI Crew (crew.py)                     |
+|  3 agents LLM : Researcher -> Technician -> Reporting Analyst |
++---------------+-----------------------------+-----------------+
+                | inputs pre-calcules          | rapport .md
++---------------v-----------------------------v-----------------+
+|                   Domain Layer (pure deterministe)             |
+|                                                               |
+|  market/exchange.py    OHLCV via CCXT (Kraken, Binance...)    |
+|  ta/ema_rsi.py         EMA20, EMA50, EMA200, RSI14, ATR14    |
+|  reporting/precompute  Tables TA, triggers, signaux prets     |
+|                                                               |
+|  domain/regime.py          Regime LOCAL   (EMA20/EMA50)       |
+|  domain/macro_regime.py    Regime MACRO   (EMA50/EMA200, BTC) |
+|  domain/signal_engine.py   SignalEngine multi-TF              |
+|  domain/decision_engine.py Moteur de decision (regles R1-R5)  |
+|  domain/portfolio.py       Portfolio + RiskLimits             |
+|  domain/portfolio_strategy.py  Strategie SPOT-ONLY finale    |
+|  domain/opportunities.py  Top 3 opportunites scorees          |
+|  risk/risk.py              Position sizing                    |
++---------------------------------------------------------------+
 ```
 
 ---
 
-## 🔧 Prérequis
+## Modules cles
+
+| Module | Role |
+|---|---|
+| **regime.py** | Regime local par paire : EMA20/EMA50 -> BULL / BEAR / RANGE |
+| **macro_regime.py** | Regime macro BTC-led : EMA50/EMA200 sur 1D -> BULL / BEAR / TRANSITION. Hierarchie : BTC (primaire), ETH (secondaire, clamping leger), XRP+ (opportuniste, clamping strict) |
+| **signal_engine.py** | Classification multi-TF : ALIGNED_BULL, ALIGNED_BEAR, SELL_BOUNCE, BUY_DIP, BULL_WEAKENING. Enrichissement environnement avec macro BTC |
+| **decision_engine.py** | 5 regles deterministes (R1->R5) : REDUCE_SWING, DEFENSIVE, HOLD_OR_ADD, REBUILD_LADDER, WAIT |
+| **portfolio_strategy.py** | Couche finale SPOT-ONLY : combine regime local + macro + signaux + decisions + contraintes de risque. Actions : ADD_SMALL, HOLD, WAIT, REDUCE_SWING, DEFENSIVE, REBUILD_LADDER |
+| **portfolio.py** | Modele Pydantic : positions (core/swing split, min_core_qty), cash USDC, RiskLimits (cash_min_pct, max_exposure_pct), DecisionDefaults |
+| **opportunities.py** | Scoring deterministe : SELL_STRENGTH, BUY_PULLBACK, DEFENSIVE -> Top 3 |
+
+---
+
+## Pipeline d'execution
+
+1. **Fetch OHLCV** via CCXT -> DataFrame pandas
+2. **Precompute** : EMA20/50/200, RSI14, ATR14, tables Markdown, triggers
+3. **Regime local** (EMA20/EMA50) + **Regime macro** (EMA50/EMA200, BTC-led)
+4. **SignalEngine** : classification multi-TF + enrichissement macro
+5. **DecisionEngine** : regles R1-R5 deterministes
+6. **PortfolioStrategyEngine** : strategie SPOT-ONLY avec gating macro (BTC BEAR bloque ADD_SMALL et REBUILD_LADDER)
+7. **OpportunityEngine** : Top 3 opportunites scorees
+8. **CrewAI agents** (LLM) : Researcher (catalyseurs + narratifs web), Technician (validation TA), Analyst (rapport Markdown final)
+9. **Rapport Markdown** horodate avec : Points cles, Configuration technique, Synthese multi-TF, Signaux prets a tirer, Triggers, Narratifs, Risques, Watchlist
+
+---
+
+## Contraintes de risque (SPOT-ONLY)
+
+- Jamais vendre en dessous de `min_core_qty`
+- Toujours garder `cash_min_pct` (defaut 20%) en USDC
+- Reductions touchent uniquement la portion swing
+- Chaque step de ladder respecte `max_single_order_cash_pct` (defaut 12%)
+- Macro BEAR BTC -> bloque les achats (ADD_SMALL -> HOLD, REBUILD_LADDER -> WAIT)
+
+---
+
+## Stack technique
+
+| Composant | Technologie |
+|---|---|
+| Runtime | Python 3.12 |
+| Framework agents | CrewAI 0.177+ |
+| LLMs | GPT-5, GPT-4o-mini, GPT-4.1-mini (fallback) |
+| Donnees marche | CCXT (multi-exchange) |
+| Calcul TA | pandas + numpy (fallback Rust optionnel) |
+| Modeles | Pydantic v2 |
+| Recherche web | Serper API |
+| Tests | pytest (76 tests, 0 echec) |
+| CI | GitHub Actions |
+
+---
+
+## Prerequis
 
 - Python **3.12**
-- Clés API si vous activez les LLM/outils :
-  - `OPENAI_API_KEY` (modèles `gpt-5`, `gpt-4o-mini`, etc.)
-  - `SERPER_API_KEY` (recherche d’actus pour narratifs)
-- (Optionnel) `uv` pour la gestion d’environnement rapide
+- Cles API :
+  - `OPENAI_API_KEY` (modeles GPT-5, GPT-4o-mini, etc.)
+  - `SERPER_API_KEY` (recherche d'actus pour narratifs)
+- (Optionnel) `uv` pour la gestion d'environnement rapide
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-Créez un fichier `.env` à la racine (ne pas committer vos vraies clés) :
+Creez un fichier `.env` a la racine (ne pas committer vos vraies cles) :
 ```ini
 # Langue & fuseau
 LANG=fr
 TZ=Europe/Paris
 
-# Marché
-PAIRS=BTC/USDC, ETH/USDC, XRP/USDC, ADA/USDC, LTC/USDC
+# Marche
+PAIRS=BTC/USDC, ETH/USDC, XRP/USDC
 TIMEFRAMES=1d,4h,1h
 TIMEFRAME=1d
 LOOKBACK=450
@@ -79,103 +142,83 @@ SERPER_API_KEY=serper-...
 REPORT_DIR=reports
 ```
 
-> Un fichier `.env.sample` peut être fourni à titre d’exemple (sans vraies clés).
-
 ---
 
-## 🚀 Démarrage rapide
+## Installation & lancement
 
-### Via CrewAI (recommandé)
 ```bash
-crewai run
-```
+# Cloner
+git clone https://github.com/vassilux/cryptoscope_crew.git
+cd cryptoscope_crew
 
-### Via Python
-```bash
-uv run python -m cryptoscope_crew.main
+# Environnement virtuel
+python -m venv .venv
+source .venv/bin/activate   # Linux/Mac
+# .\.venv\Scripts\activate  # Windows
+
+# Dependances
+pip install -e .
+
+# Lancer le crew
+cryptoscope_crew
 # ou
 python -m cryptoscope_crew.main
 ```
 
-### Paramètres utiles
-Vous pouvez surcharger à l’exécution via `--inputs` :
+---
+
+## Tests
+
 ```bash
-python -m cryptoscope_crew.main   --inputs lang=fr tz=Europe/Paris timeframe=1d            pairs="BTC/USDC,ETH/USDC,XRP/USDC" lookback=450
-```
-
-- Les rapports sont générés dans `reports/` sous la forme `report_DDMMYYYY_HHMM.md`.
-- Le writer force le format en sections pour une lecture immédiate.
-
----
-
-## 🧠 Comment ça marche (agents & tasks)
-
-- **researcher** : capte **catalyseurs** & **narratifs** (avec Serper).
-- **technician** : commente la **table TA** (EMA/RSI/ATR) + divergences multi‑TF & invalidations.
-- **reporting_analyst** : assemble le **rapport** final (sections normalisées).
-
-**Ordre d’exécution** (séquentiel) :
-1. `scan_market` → 3–5 catalyseurs du jour (+sources si dispo)
-2. `narrative_scan` → 3–5 narratifs en tendance (JSON strict, sources vérifiées)
-3. `tech_review` → remarques techniques & invalidations
-4. `reporting_task` → rapport final Markdown
-
----
-
-## 📄 Exemple de sortie (extrait)
-
-```md
----
-**Timeframes :** 1d, 4h, 1h — **Paires :** BTC/USDC, ETH/USDC, XRP/USDC, ADA/USDC
-**Date :** 2025-10-14  **Heure :** 08:00  **ISO :** 2025-10-14T08:00:00+02:00 (TZ: Europe/Paris)
----
-
-## Points clés
-- ETH proche d’un reclaim daily (RSI→50) — renforcer sur force.
-- BTC quasi au-dessus d’EMA50(4h) — surveiller momentum 4h.
-- XRP/ADA encore loin des EMA(1d) — privilégier des entrées confirmées.
-
-## Signaux prêts à tirer
-- **ETH** — Prix=4 240 | EMA20: 0.45% à franchir | EMA50: déjà > …  | RSI=49.6 (→50: 0.4 pt)
-- **BTC** — Prix=115 700 | EMA20: 1.1% à franchir | EMA50: déjà > … | RSI=48.9 (→50: 1.1 pt)
+pytest tests/ -v
+# 76 tests, 0 echec
 ```
 
 ---
 
-## 💸 Coûts & bonnes pratiques
+## Structure du projet
 
-- **Limiter la verbosité** (`verbose=False`) pour réduire les tokens.
-- Utiliser un modèle plus économique pour les tâches narratives/techniques si nécessaire.
-- Les tables/indicateurs sont calculés localement ; seules les tâches “texte” appellent l’LLM/outils.
+```
+cryptoscope_crew/
++-- src/cryptoscope_crew/
+|   +-- crew.py                    # Crew CrewAI, agents & tasks, injection inputs
+|   +-- main.py                    # Point d'entree CLI
+|   +-- config.py                  # Configuration exchange
+|   +-- journal.py                 # Sauvegarde outputs intermediaires
+|   +-- config/
+|   |   +-- agents.yaml            # Roles des 3 agents
+|   |   +-- tasks.yaml             # 4 taches (scan_market, narrative_scan, tech_review, reporting_task)
+|   +-- domain/
+|   |   +-- regime.py              # Regime local EMA20/EMA50
+|   |   +-- macro_regime.py        # Regime macro BTC-led EMA50/EMA200
+|   |   +-- signal_engine.py       # Classification multi-TF
+|   |   +-- decision_engine.py     # Regles R1-R5
+|   |   +-- portfolio.py           # Portfolio + RiskLimits + DecisionDefaults
+|   |   +-- portfolio_strategy.py  # Strategie SPOT-ONLY finale
+|   |   +-- opportunities.py       # Top 3 opportunites
+|   |   +-- schemas.py             # Schemas Pydantic partages
+|   +-- market/
+|   |   +-- exchange.py            # Fetch OHLCV via CCXT
+|   +-- reporting/
+|   |   +-- precompute.py          # Pre-calcul TA, tables MD, triggers
+|   +-- ta/
+|   |   +-- ema_rsi.py             # EMA, RSI (pandas, fallback Rust)
+|   +-- risk/
+|       +-- risk.py                # Position sizing
++-- tests/
+|   +-- test_decisions.py          # 30 tests decision engine
+|   +-- test_opportunities.py      # 10 tests opportunities
+|   +-- test_portfolio_strategy.py # 36 tests regime + signal + strategy
++-- reports/                       # Rapports generes
++-- runs/                          # Outputs intermediaires par run
++-- portfolio.json                 # Portefeuille reel (gitignored)
++-- pyproject.toml
++-- Makefile
++-- .env                           # Cles API (gitignored)
+```
 
 ---
 
-## 🛡️ Avertissements
+## Licence
 
-- **Éducatif uniquement** — ce projet n’est **pas** un conseil financier.
-- Faites vos propres recherches (**DYOR**) et n’engagez que ce que vous pouvez vous permettre de perdre.
-- Les données & sources peuvent être incomplètes ou erronées.
-
----
-
-## 🗺️ Roadmap courte
-
-- [ ] Backtests rapides sur règles “reclaim + RSI”
-- [ ] Export HTML/PDF du rapport
-- [ ] Tableau de bord léger (Streamlit) avec graphes EMA/RSI/ATR
-- [ ] Cache des requêtes de recherche (Serper) pour réduire les coûts
-
----
-
-## 🤝 Contribuer
-
-PRs bienvenues ! Merci de :
-1. Créer une branche dédiée (`feat/...`, `fix/...`).
-2. Lancer la CI locale (`ruff` / dry‑run).
-3. Ouvrir une PR descriptive.
-
----
-
-## 📜 Licence
-
-Ce projet est publié sous licence **MIT**. Voir le fichier `LICENSE`.
+Ce projet est publie sous licence **MIT**. Voir le fichier `LICENSE`.
