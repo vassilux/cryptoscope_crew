@@ -1,7 +1,0 @@
-{"key_drivers":[
-"- USA NFP (emploi non-agricole) aujourd’hui: publication à 14h30 CET susceptible d’impacter le dollar, les taux réels et donc le beta crypto (BTC/ETH/XRP) — Aucune source vérifiée",
-"- Flux ETF spot Bitcoin (US) de la veille: surveiller entrées/sorties nettes qui pilotent la demande marginale et le momentum BTC — Aucune source vérifiée",
-"- Ethereum: suivi des nouvelles/étapes autour des ETF spot ETH et du calendrier d’upgrades (impact sur gas/L2 et positioning) — Aucune source vérifiée",
-"- Régulation US/UE: annonces potentielles (SEC/CFTC, MiCA) pouvant affecter la disponibilité des paires USDC et la liquidité centralisée — Aucune source vérifiée",
-"- Listings ou intégrations CEX/DeFi du jour (tokens/L2, produits dérivés) pouvant modifier la profondeur et la volatilité sur BTC/USDC, ETH/USDC, XRP/USDC — Aucune source vérifiée"
-]}

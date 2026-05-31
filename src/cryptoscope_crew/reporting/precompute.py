@@ -6,8 +6,20 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 
-from cryptoscope_crew.market.exchange import fetch_ohlcv_async
+from cryptoscope_crew.market.exchange import (
+    fetch_ohlcv_async,
+    fetch_funding_rate,
+    fetch_open_interest,
+    fetch_open_interest_history,
+)
 from cryptoscope_crew.ta.ema_rsi import ema_rsi_signal  # ema/rsi + signal  :contentReference[oaicite:4]{index=4}
+from cryptoscope_crew.ta.price_action import (
+    analyze_price_action,
+    choppiness_index,
+    PriceActionContext,
+)
+from cryptoscope_crew.ta.confluence_score import compute_confluence_score, ScoringConfig
+from cryptoscope_crew.domain.regime_flow import analyze_regime_flow, FlowRegimeResult
 
 def tech_table_from_context(context: dict) -> str:
     rows = [
@@ -134,6 +146,21 @@ async def _build_context_async(pairs: List[str], timeframe: str, lookback: int) 
         rsi = float(last["rsi14"])
         atr = float(last["atr14"])
 
+        # Price Action analysis
+        pa_ctx = analyze_price_action(df, swing_length=50, internal_length=5)
+
+        # Confluence scoring
+        n = len(df) - 1
+        confluence = compute_confluence_score(
+            pa_context=pa_ctx,
+            current_bar=n,
+            current_close=close,
+            current_low=float(last["low"]) if "low" in last.index else close,
+            current_high=float(last["high"]) if "high" in last.index else close,
+            atr=atr,
+            htf_structure_trend=None,  # filled later in multi-TF
+        )
+
         ctx_pairs.append({
             "pair": pair,
             "close": close,
@@ -143,6 +170,20 @@ async def _build_context_async(pairs: List[str], timeframe: str, lookback: int) 
             "rsi14": rsi,
             "atr14": atr,
             "bias": "bull" if ema_fast > ema_slow else "bear",
+            # Price Action enrichment
+            "structure_trend": pa_ctx.structure_trend,
+            "last_bos_type": pa_ctx.last_bos_type,
+            "last_bos_direction": pa_ctx.last_bos_direction,
+            "chop_value": pa_ctx.chop_value,
+            "chop_regime": pa_ctx.chop_regime,
+            "price_zone": pa_ctx.price_zone,
+            "active_fvg_count": len([f for f in pa_ctx.fvg_zones if not f.mitigated]),
+            "active_ob_count": len([ob for ob in pa_ctx.order_blocks if not ob.breaker]),
+            "recent_sweeps": len(pa_ctx.liquidity_sweeps[-5:]) if pa_ctx.liquidity_sweeps else 0,
+            # Confluence scores
+            "confluence_bull": confluence.bull_score,
+            "confluence_bear": confluence.bear_score,
+            "confluence_setup": "BULL" if confluence.bullish_setup else "BEAR" if confluence.bearish_setup else "NONE",
         })
     return {"timeframe": timeframe, "pairs": ctx_pairs}
 
@@ -263,4 +304,87 @@ def ready_signals_multi(context_by_tf: dict, order: list[str] = None) -> str:
         if ctx:
             blocks.append(ready_signals_from_context(ctx, tf))
     return "\n\n".join(blocks)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Regime + Flow enrichment
+# ─────────────────────────────────────────────────────────────────────
+
+def precompute_flow(pairs: List[str], context_by_tf: Dict[str, dict]) -> Dict[str, FlowRegimeResult]:
+    """Compute Regime+Flow analysis for each pair.
+
+    Uses 4H context for CHOP + EMAs, fetches funding rate and OI from exchange.
+
+    Returns dict: {pair: FlowRegimeResult}
+    """
+    results = {}
+    # Prefer 4H for regime detection; fall back to 1D
+    regime_tf = "4h" if "4h" in context_by_tf else "1d"
+    ctx = context_by_tf.get(regime_tf, {})
+
+    for p_data in ctx.get("pairs", []):
+        pair = p_data["pair"]
+        close = p_data["close"]
+        ema20 = p_data["ema_fast"]
+        ema50 = p_data["ema_slow"]
+        ema200 = p_data.get("ema200", ema50)  # fallback if missing
+        chop_val = p_data.get("chop_value", 50.0)
+
+        # Fetch funding rate
+        fr_data = fetch_funding_rate(pair)
+        funding_rate = fr_data["funding_rate"] if fr_data and fr_data.get("funding_rate") is not None else None
+
+        # Fetch OI and compute 24h change
+        oi_change_pct = _compute_oi_change(pair)
+
+        result = analyze_regime_flow(
+            pair=pair,
+            ema20=ema20,
+            ema50=ema50,
+            ema200=ema200,
+            close=close,
+            chop_value=chop_val,
+            oi_change_pct=oi_change_pct,
+            funding_rate=funding_rate,
+        )
+        results[pair] = result
+
+    return results
+
+
+def _compute_oi_change(pair: str) -> float:
+    """Compute OI % change over ~24h. Returns 0.0 if data unavailable."""
+    try:
+        oi_df = fetch_open_interest_history(pair, timeframe="1h", limit=48)
+        if oi_df.empty or len(oi_df) < 2:
+            return 0.0
+        oi_now = float(oi_df["open_interest"].iloc[-1])
+        # ~24h ago (24 bars on 1h)
+        lookback_idx = max(0, len(oi_df) - 25)
+        oi_then = float(oi_df["open_interest"].iloc[lookback_idx])
+        if oi_then == 0:
+            return 0.0
+        return ((oi_now - oi_then) / oi_then) * 100.0
+    except Exception:
+        return 0.0
+
+
+def flow_summary_table(flow_results: Dict[str, FlowRegimeResult]) -> str:
+    """Generate a markdown table summarizing Regime+Flow for all pairs."""
+    rows = [
+        "| Pair | Regime | Direction | Conv. | EMA | CHOP | OI Δ24h | Funding | Size% | Exit |",
+        "|------|--------|-----------|-------|-----|------|---------|---------|-------|------|",
+    ]
+    for pair, r in flow_results.items():
+        ema_icon = "✓" if r.ema_aligned else "✗"
+        chop_icon = "✓" if r.chop_trending else "✗"
+        oi_icon = "✓" if r.oi_rising else "✗"
+        fund_icon = "✓" if r.funding_favorable else "✗"
+        exit_str = r.exit_signal.value if r.exit_signal.value != "NONE" else "-"
+        rows.append(
+            f"| **{pair}** | {r.regime.value} | {r.direction} | {r.conviction_score}/4 | "
+            f"{ema_icon} | {chop_icon} ({r.chop_value:.0f}) | {oi_icon} ({r.oi_change_pct:+.1f}%) | "
+            f"{fund_icon} ({r.funding_rate*100:.3f}%) | {r.suggested_size_pct:.1f}% | {exit_str} |"
+        )
+    return "\n".join(rows)
 

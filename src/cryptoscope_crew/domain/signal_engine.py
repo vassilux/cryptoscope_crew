@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from cryptoscope_crew.domain.decision_engine import _bias, _rsi, _get_entry
 from cryptoscope_crew.domain.macro_regime import MacroRegime
 from cryptoscope_crew.domain.regime import MarketRegime, RegimeResult
+from cryptoscope_crew.domain.regime_flow import FlowRegimeResult, FlowRegime
 
 
 # ------------------------------------------------------------------ #
@@ -50,6 +51,17 @@ class MultiTFSignal(BaseModel):
     description: str = ""
     environment: str = ""   # short label for the trading environment
 
+    # Regime+Flow enrichment
+    flow_regime: str = ""             # FlowRegime value (STRONG_BULL, etc.)
+    flow_conviction: int = 0          # 0-4 conditions met
+    flow_size_pct: float = 0.0        # Suggested position size
+    confluence_bull: int = 0           # 0-100
+    confluence_bear: int = 0           # 0-100
+    confluence_setup: str = "NONE"    # BULL / BEAR / NONE
+    price_zone: str = ""              # premium / discount / equilibrium
+    chop_regime: str = ""             # trending / choppy / neutral
+    structure_trend: int = 0          # >0 bull, <0 bear
+
 
 # ------------------------------------------------------------------ #
 #  Engine
@@ -71,17 +83,24 @@ class SignalEngine:
         regime: RegimeResult,
         *,
         btc_macro: Optional[MacroRegime] = None,
+        flow_result: Optional[FlowRegimeResult] = None,
     ) -> MultiTFSignal:
         """Produce a multi-TF signal for *pair*.
 
         If *btc_macro* is provided and the pair is not BTC, the
         environment label is enriched with BTC macro context.
+
+        If *flow_result* is provided, the signal is enriched with
+        Regime+Flow data (confluence, zone, structure, sizing).
         """
         b1d = regime.regime.value.capitalize()  # "Bull" / "Bear" / "Range"
         b4h = _bias(context_by_tf.get("4h", {}), pair)
         b1h = _bias(context_by_tf.get("1h", {}), pair)
         rsi_1h = _rsi(context_by_tf.get("1h", {}), pair)
         rsi_4h = _rsi(context_by_tf.get("4h", {}), pair)
+
+        # Extract confluence/PA data from 4H context
+        pa_data = _get_pair_data(context_by_tf.get("4h", {}), pair)
 
         base = dict(
             pair=pair,
@@ -90,6 +109,16 @@ class SignalEngine:
             bias_1h=b1h,
             rsi_1h=rsi_1h,
             rsi_4h=rsi_4h,
+            # Flow enrichment
+            flow_regime=flow_result.regime.value if flow_result else "",
+            flow_conviction=flow_result.conviction_score if flow_result else 0,
+            flow_size_pct=flow_result.suggested_size_pct if flow_result else 0.0,
+            confluence_bull=pa_data.get("confluence_bull", 0) if pa_data else 0,
+            confluence_bear=pa_data.get("confluence_bear", 0) if pa_data else 0,
+            confluence_setup=pa_data.get("confluence_setup", "NONE") if pa_data else "NONE",
+            price_zone=pa_data.get("price_zone", "") if pa_data else "",
+            chop_regime=pa_data.get("chop_regime", "") if pa_data else "",
+            structure_trend=pa_data.get("structure_trend", 0) if pa_data else 0,
         )
 
         # ── BEAR regime patterns ──────────────────────────────────
@@ -234,11 +263,14 @@ class SignalEngine:
         regimes: List[RegimeResult],
         *,
         btc_macro: Optional[MacroRegime] = None,
+        flow_results: Optional[Dict[str, FlowRegimeResult]] = None,
     ) -> List[MultiTFSignal]:
         """Analyze all pairs. *regimes* order must match *pairs*.
 
         *btc_macro* is the BTC macro regime (from BtcMacroRegimeDetector).
         When provided, environment labels are enriched with macro context.
+
+        *flow_results* is a dict {pair: FlowRegimeResult} from precompute_flow.
         """
         regime_map = {r.pair: r for r in regimes}
 
@@ -248,7 +280,22 @@ class SignalEngine:
             if regime is None:
                 # fallback: RANGE
                 regime = RegimeResult(pair=pair, regime=MarketRegime.RANGE)
-            sig = SignalEngine.analyze(pair, context_by_tf, regime, btc_macro=btc_macro)
+            fr = flow_results.get(pair) if flow_results else None
+            sig = SignalEngine.analyze(pair, context_by_tf, regime, btc_macro=btc_macro, flow_result=fr)
             sig = SignalEngine._enrich_environment(sig, btc_macro)
             results.append(sig)
         return results
+
+
+# ------------------------------------------------------------------ #
+#  Helpers
+# ------------------------------------------------------------------ #
+
+def _get_pair_data(tf_ctx: dict, pair: str) -> Optional[dict]:
+    """Extract pair data dict from a TF context block."""
+    if not tf_ctx:
+        return None
+    for p in tf_ctx.get("pairs", []):
+        if p.get("pair") == pair:
+            return p
+    return None

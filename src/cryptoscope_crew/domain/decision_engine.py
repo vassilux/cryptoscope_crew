@@ -13,6 +13,10 @@ Règles V1 :
   R1  1D Bear + 4H Bull + RSI 1H > 70   → REDUCE_SWING
   R2  1D Bear + 4H Bear                 → DEFENSIVE
   R3  1D Bull + 4H Bull                 → HOLD_OR_ADD
+  R4  1D Bull + 4H/1H Bear + RSI<40     → REBUILD_LADDER
+  R6  Confluence bull≥75 + discount + trending → REBUILD_LADDER
+  R7  CHoCH bearish (structure_trend<-2) → REDUCE_SWING
+  R8  Confluence bear≥75 + premium       → DEFENSIVE
   R5  fallback                           → WAIT
 """
 from __future__ import annotations
@@ -317,6 +321,61 @@ def decide(
                 f"autour de EMA20 4H."
             ),
             rule_id="R4",
+        )
+
+    # --- R6 : Confluence bull ≥ 75 + discount zone + trending CHOP → REBUILD_LADDER ---
+    pa_4h = _get_entry(context_by_tf.get("4h", {}), pair) if "4h" in context_by_tf else None
+    conf_bull = pa_4h.get("confluence_bull", 0) if pa_4h else 0
+    conf_bear = pa_4h.get("confluence_bear", 0) if pa_4h else 0
+    price_zone = pa_4h.get("price_zone", "") if pa_4h else ""
+    chop_regime = pa_4h.get("chop_regime", "") if pa_4h else ""
+    structure_trend = pa_4h.get("structure_trend", 0) if pa_4h else 0
+
+    if conf_bull >= 75 and price_zone == "discount" and chop_regime == "trending":
+        return DecisionResult(
+            **base,
+            suggested_action=Action.REBUILD_LADDER,
+            adjustment_pct=None,
+            reentry_zone=f"Discount zone + active OBs/FVGs",
+            invalidation=f"Confluence drops below 60 or CHoCH bearish on 4H",
+            rationale=(
+                f"High bull confluence ({conf_bull}/100) in discount zone. "
+                f"CHOP indicates trending market. Structure trend={structure_trend:+d}. "
+                f"Build spot ladder into the zone."
+            ),
+            rule_id="R6",
+        )
+
+    # --- R7 : CHoCH bearish (structure_trend < -2) → REDUCE_SWING ---
+    if structure_trend < -2 and b1d != "Bear":
+        return DecisionResult(
+            **base,
+            suggested_action=Action.REDUCE_SWING,
+            adjustment_pct=15,
+            distance_pct=round(dist_pct, 2),
+            reentry_zone=f"Wait for BOS bullish reclaim",
+            invalidation=f"BOS bullish on 4H + reclaim EMA20 4H",
+            rationale=(
+                f"Multiple CHoCH bearish events (structure_trend={structure_trend}). "
+                f"Trend integrity weakening even if daily still neutral/bull. "
+                f"Lighten swing before full breakdown confirms."
+            ),
+            rule_id="R7",
+        )
+
+    # --- R8 : Confluence bear ≥ 75 + premium zone → DEFENSIVE ---
+    if conf_bear >= 75 and price_zone == "premium":
+        return DecisionResult(
+            **base,
+            suggested_action=Action.DEFENSIVE,
+            adjustment_pct=None,
+            reentry_zone=None,
+            invalidation=f"Bear confluence drops below 60 or break above swing high",
+            rationale=(
+                f"High bear confluence ({conf_bear}/100) in premium zone. "
+                f"Distribution likely. Defensive stance — no new buys."
+            ),
+            rule_id="R8",
         )
 
     # --- R5 : fallback ---

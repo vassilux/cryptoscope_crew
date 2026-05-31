@@ -32,6 +32,36 @@ narrative_scan:
   expected_output: '{"narratives":[{"title":"...", "summary":"...", "tickers":["..."], "heat":3, "sources":["..."]}]}'
   agent: researcher
 
+social_scan:
+  description: |
+    Réponds uniquement en {lang}.
+    {header_md}
+
+    Utilise les outils Membit (cluster_search, etc.) pour analyser Twitter/X sur les dernières 24–48h.
+    Focus : {pairs_display} + crypto en général.
+
+    Produis :
+    1. Sentiment global (bull / bear / neutre) avec ratio approximatif (ex: "60% bull / 30% bear / 10% neutre")
+    2. Top 3–5 clusters/sujets dominants avec :
+       - titre court
+       - résumé (1 phrase)
+       - tickers associés
+       - score momentum (1–10)
+       - volume estimé (low/medium/high)
+    3. Signaux faibles : 1–3 narratifs émergents à faible volume mais forte vélocité
+
+    Rends un JSON STRICT (sans texte autour) :
+    {"sentiment":{"bull_pct":60,"bear_pct":30,"neutral_pct":10,"label":"bull"},
+     "clusters":[
+       {"title":"...","summary":"...","tickers":["BTC"],"momentum":8,"volume":"high"},
+       {"title":"...","summary":"...","tickers":["ETH"],"momentum":6,"volume":"medium"}
+     ],
+     "weak_signals":[
+       {"title":"...","summary":"...","tickers":["..."],"momentum":3,"volume":"low"}
+     ]}
+  expected_output: '{"sentiment":{...},"clusters":[...],"weak_signals":[...]}'
+  agent: narrative_hunter
+
 tech_review:
   description: |
     Réponds uniquement en {lang}.
@@ -99,4 +129,3 @@ reporting_task:
     {context_json}
   expected_output: "Markdown final du rapport."
   agent: reporting_analyst
-  output_file: "{report_output_path}"

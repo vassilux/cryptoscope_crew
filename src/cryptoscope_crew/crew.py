@@ -13,12 +13,13 @@ from crewai.project import CrewBase, agent, crew, task, before_kickoff,llm
 from crewai import LLM
 from crewai.project import llm as llm_decorator
 from crewai.agents.agent_builder.base_agent import BaseAgent
-from crewai_tools import SerperDevTool
+from crewai_tools import SerperDevTool, MCPServerAdapter
+from mcp import StdioServerParameters
 from litellm.exceptions import ContentPolicyViolationError
 
-from cryptoscope_crew.reporting.precompute import precompute, precompute_multi, ready_signals_from_context, ready_signals_multi, tech_table_from_context, triggers_from_context
+from cryptoscope_crew.reporting.precompute import precompute, precompute_multi, ready_signals_from_context, ready_signals_multi, tech_table_from_context, triggers_from_context, precompute_flow, flow_summary_table
 from cryptoscope_crew.journal import save_task_output, validate_narrative_scan
-from cryptoscope_crew.domain.portfolio import load_portfolio
+from cryptoscope_crew.domain.portfolio import load_portfolio, sync_portfolio_from_exchange
 from cryptoscope_crew.domain.decision_engine import decide_all, decisions_to_markdown
 from cryptoscope_crew.domain.opportunities import OpportunityEngine, opportunities_to_markdown
 from cryptoscope_crew.domain.regime import MarketRegimeDetector
@@ -117,6 +118,31 @@ def _tool_registry():
         # "duckduckgo": DuckDuckGoSearchTool() ...
     }
 
+def _membit_tools():
+    """Initialize Membit MCP tools for Twitter/X analysis. Returns list or empty."""
+    api_key = os.getenv("MEMBIT_API_KEY")
+    if not api_key:
+        print("[WARN] MEMBIT_API_KEY not set — social_scan disabled")
+        return []
+    try:
+        server_params = StdioServerParameters(
+            command="npx",
+            args=[
+                "mcp-remote",
+                "https://mcp.membit.ai/mcp",
+                "--header",
+                f"X-Membit-Api-Key:{api_key}",
+            ],
+        )
+        adapter = MCPServerAdapter(server_params)
+        tools = adapter.tools
+        print(f"[OK] Membit MCP: {len(tools)} tools loaded")
+        return tools
+    except Exception as e:
+        print(f"[WARN] Membit MCP init failed: {e}")
+        return []
+
+
 def _tools_for(agent_name: str):
     reg = _tool_registry()
     mapping = {
@@ -129,6 +155,45 @@ def _tools_for(agent_name: str):
 
 def _lang_guard(lang: str) -> str:
     return "IMPORTANT: Réponds exclusivement en français. Si une partie est en anglais, retraduis-la en français."
+
+
+def _format_social_section(data: dict) -> str:
+    """Format social_scan JSON into a markdown section."""
+    lines = ["## Social Sentiment (Twitter/X)", ""]
+
+    # Sentiment overview
+    sentiment = data.get("sentiment", {})
+    label = sentiment.get("label", "?").upper()
+    bull = sentiment.get("bull_pct", 0)
+    bear = sentiment.get("bear_pct", 0)
+    neutral = sentiment.get("neutral_pct", 0)
+    lines.append(f"**Sentiment global :** {label} — 🟢 {bull}% bull / 🔴 {bear}% bear / ⚪ {neutral}% neutre")
+    lines.append("")
+
+    # Clusters
+    clusters = data.get("clusters", [])
+    if clusters:
+        lines.append("### Clusters dominants")
+        lines.append("| # | Sujet | Tickers | Momentum | Volume |")
+        lines.append("|---|-------|---------|----------|--------|")
+        for i, c in enumerate(clusters[:5], 1):
+            tickers = ", ".join(c.get("tickers", []))
+            mom = c.get("momentum", 0)
+            vol = c.get("volume", "?")
+            mom_bar = "█" * min(mom, 10) + "░" * (10 - min(mom, 10))
+            lines.append(f"| {i} | {c.get('title', '?')} | {tickers} | {mom_bar} {mom}/10 | {vol} |")
+        lines.append("")
+
+    # Weak signals
+    weak = data.get("weak_signals", [])
+    if weak:
+        lines.append("### Signaux faibles (émergents)")
+        for w in weak[:3]:
+            tickers = ", ".join(w.get("tickers", []))
+            lines.append(f"- **{w.get('title', '?')}** ({tickers}) — {w.get('summary', '')} [momentum: {w.get('momentum', '?')}/10]")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 @CrewBase
@@ -251,6 +316,9 @@ class CryptoscopeCrew:
             # --- Decision Engine (déterministe) ---
             try:
                 portfolio = load_portfolio()
+                # Sync live balances from Binance (overwrites quantity + avg_price)
+                if os.getenv("PORTFOLIO_LIVE_SYNC", "1") == "1":
+                    portfolio = sync_portfolio_from_exchange(portfolio, pairs)
                 # Enrichir avec les prix courants (depuis le TF principal)
                 prices = {p["pair"]: p["close"] for p in ctx_main.get("pairs", [])}
                 portfolio.enrich_all(prices)
@@ -301,9 +369,22 @@ class CryptoscopeCrew:
                 # --- Portfolio Strategy (déterministe) ---
                 try:
                     # regimes already computed above (local + macro)
+
+                    # --- Regime + Flow (funding, OI, CHOP) ---
+                    try:
+                        flow_results = precompute_flow(pairs, bundle["context_by_tf"])
+                        inputs["flow_table_md"] = flow_summary_table(flow_results)
+                        self._flow_table_md = inputs["flow_table_md"]
+                        print(f"[OK] Regime+Flow: {len(flow_results)} pairs computed")
+                    except Exception as fe:
+                        print(f"[WARN] precompute_flow failed: {fe}")
+                        flow_results = {}
+                        inputs["flow_table_md"] = ""
+
                     signals = SignalEngine.analyze_all(
                         pairs, bundle["context_by_tf"], regimes,
                         btc_macro=btc_macro,
+                        flow_results=flow_results,
                     )
                     strategy = PortfolioStrategyEngine.build(
                         portfolio, regimes, signals, decisions, bundle["context_by_tf"],
@@ -370,6 +451,25 @@ class CryptoscopeCrew:
         # Injecte le résultat validé comme attribut pour usage aval
         self._narrative_validated = validated
 
+    def _cb_social_scan(self, output) -> None:
+        """Parse et sauvegarde la sortie social_scan (Membit)."""
+        save_task_output("social_scan", output.raw, self._run_dir)
+        # Parse JSON pour construire la section markdown
+        try:
+            raw = output.raw.strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = re.sub(r"^```\w*\n?", "", raw)
+                raw = re.sub(r"\n?```$", "", raw)
+            data = json.loads(raw)
+            self._social_data = data
+            self._social_md = _format_social_section(data)
+            print(f"[OK] social_scan: sentiment={data.get('sentiment', {}).get('label', '?')}, "
+                  f"{len(data.get('clusters', []))} clusters")
+        except Exception as e:
+            print(f"[WARN] social_scan parse failed: {e}")
+            self._social_md = ""
+
     def _cb_tech_review(self, output) -> None:
         """Sauvegarde brute de la sortie tech_review."""
         save_task_output("tech_review", output.raw, self._run_dir)
@@ -388,13 +488,20 @@ class CryptoscopeCrew:
         portfolio_strategy_md = getattr(self, "_portfolio_strategy_md", "")
         if portfolio_strategy_md:
             report = report.rstrip() + "\n\n" + portfolio_strategy_md
+        flow_table_md = getattr(self, "_flow_table_md", "")
+        if flow_table_md:
+            report = report.rstrip() + "\n\n## Regime + Flow\n\n" + flow_table_md
+        social_md = getattr(self, "_social_md", "")
+        if social_md:
+            report = report.rstrip() + "\n\n" + social_md
         # 1) Copie dans run_dir
         dest = os.path.join(self._run_dir, "report.md")
         _p.Path(dest).write_text(report, encoding="utf-8")
         print(f"[FILE] Report copi\u00e9 -> {dest}")
         # 2) Écraser le output_file (reports/) pour inclure le Decision Summary
         report_output = getattr(self, "_report_output_path", "")
-        if report_output and _p.Path(report_output).exists():
+        if report_output:
+            _p.Path(report_output).parent.mkdir(parents=True, exist_ok=True)
             _p.Path(report_output).write_text(report, encoding="utf-8")
             print(f"[FILE] Report principal mis \u00e0 jour -> {report_output}")
 
@@ -433,6 +540,17 @@ class CryptoscopeCrew:
             llm=_llm_analyst(),
             instructions=[_lang_guard("fr")],
         )
+
+    @agent
+    def narrative_hunter(self) -> Agent:
+        membit = _membit_tools()
+        return Agent(
+            config=self.agents_config["narrative_hunter"],
+            verbose=True,
+            tools=membit,
+            llm=_llm_researcher(),
+            instructions=[_lang_guard("fr")],
+        )
     
     # -------------
     # Tasks
@@ -452,6 +570,14 @@ class CryptoscopeCrew:
             config=self.tasks_config["narrative_scan"],  
             agent=self.researcher(),
             callback=self._cb_narrative_scan,
+        )
+
+    @task
+    def social_scan(self) -> Task:
+        return Task(
+            config=self.tasks_config["social_scan"],
+            agent=self.narrative_hunter(),
+            callback=self._cb_social_scan,
         )
 
     @task
@@ -489,11 +615,11 @@ class CryptoscopeCrew:
             # ⬇️ on passe la sortie des tasks précédentes au writer
             context=[
                 self.scan_market(),     # catalyseurs
-                self.narrative_scan(),  # narratifs
+                self.narrative_scan(),  # narratifs news
+                self.social_scan(),     # narratifs Twitter/X (Membit)
                 self.tech_review(),     # notes techniques
             ],
-            output_file="{report_output_path}",  # reports/ directory
-            callback=self._cb_reporting,          # copie dans run_dir/
+            callback=self._cb_reporting,          # écrit run_dir/ + reports/
         )
 
 

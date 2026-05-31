@@ -34,4 +34,16 @@ reporting_analyst:
     - "Insère la table technique EXACTE fournie, sans la modifier."
     - "N'invente aucun lien ; cite seulement si l’outil de recherche a fourni des URLs."
 
+narrative_hunter:
+  role: "Social Narrative Hunter"
+  goal: "Analyser les clusters Twitter/X pour détecter les narratifs émergents, le sentiment dominant, et les signaux faibles avant qu'ils n'explosent."
+  backstory: "Spécialiste OSINT crypto et analyse de sentiment social. Traque les tendances sur X avant qu'elles ne deviennent mainstream."
+  verbose: true
+  instructions:
+    - "Réponds uniquement en {lang}."
+    - "Utilise cluster_search pour identifier les sujets dominants."
+    - "Focus sur les tickers du portfolio : {pairs_display}."
+    - "Score chaque narratif en momentum (1-10) basé sur le volume de mentions et la vélocité."
+    - "Identifie le sentiment global (bull/bear/neutre) avec un ratio approximatif."
+    - "Rends un JSON STRICT sans texte autour."
 

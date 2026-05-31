@@ -198,3 +198,77 @@ def load_portfolio() -> "Portfolio":
     except ValidationError as exc:
         print(f"[WARN] Portfolio validation error: {exc}")
         return Portfolio()
+
+
+# ------------------------------------------------------------------ #
+#  Live sync from exchange
+# ------------------------------------------------------------------ #
+
+def sync_portfolio_from_exchange(
+    portfolio: "Portfolio",
+    tracked_pairs: Optional[List[str]] = None,
+) -> "Portfolio":
+    """Sync portfolio positions with live Binance spot balances.
+
+    - Updates `quantity` from live balances (source of truth)
+    - Recomputes `avg_price` from trade history (FIFO)
+    - Updates `cash_usdc` from live USDC balance
+    - Fixes min_core_qty if position < floor (caps at current qty)
+    - Marks closed positions (qty=0) with avg_price=0
+
+    Keeps static config from portfolio.json: core_pct, swing_pct, risk_limits, defaults.
+    """
+    from ..market.exchange import fetch_spot_balances, fetch_avg_entry_price
+
+    # Determine which assets to query
+    if tracked_pairs is None:
+        tracked_pairs = [p.pair for p in portfolio.positions]
+
+    assets = set()
+    for pair in tracked_pairs:
+        base = pair.split("/")[0]
+        assets.add(base)
+    assets.add("USDC")  # Always track cash
+
+    # Fetch live balances
+    try:
+        balances = fetch_spot_balances(list(assets))
+    except Exception as e:
+        print(f"[WARN] sync_portfolio: failed to fetch balances: {e}")
+        return portfolio
+
+    # Update cash
+    portfolio.cash_usdc = balances.get("USDC", 0.0)
+
+    # Update each position
+    for pos in portfolio.positions:
+        base = pos.pair.split("/")[0].upper()
+        live_qty = balances.get(base, 0.0)
+
+        # Update quantity from exchange (source of truth)
+        pos.quantity = live_qty
+
+        # If position is closed, clear avg_price
+        if live_qty == 0.0:
+            pos.avg_price = 0.0
+            pos.min_core_qty = 0.0
+            continue
+
+        # Compute avg entry from trade history
+        try:
+            avg, _ = fetch_avg_entry_price(pos.pair)
+            if avg > 0:
+                pos.avg_price = avg
+        except Exception as e:
+            print(f"[WARN] sync_portfolio: avg_price fetch failed for {pos.pair}: {e}")
+            # Keep existing avg_price from portfolio.json as fallback
+
+        # Fix min_core_qty bug: floor cannot exceed actual position
+        if pos.min_core_qty > pos.quantity:
+            pos.min_core_qty = round(pos.quantity * (pos.core_pct / 100), 8)
+
+    synced_assets = [f"{a}={balances.get(a, 0)}" for a in sorted(assets) if a != "USDC"]
+    print(f"[PORTFOLIO] Synced from Binance: cash={portfolio.cash_usdc:.2f} USDC, "
+          f"{', '.join(synced_assets)}")
+
+    return portfolio
