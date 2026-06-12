@@ -388,3 +388,127 @@ def flow_summary_table(flow_results: Dict[str, FlowRegimeResult]) -> str:
         )
     return "\n".join(rows)
 
+
+# ─────────────────────────────────────────────────────────────────────
+#  Niveaux Clés (déterministe)
+# ─────────────────────────────────────────────────────────────────────
+
+def key_levels_table(context_by_tf: Dict[str, Dict], pivot_tf: str = "4h") -> str:
+    """Generate a deterministic 'Niveaux Clés' table from 4H data.
+
+    For each pair:
+      - Support: recent low or EMA50 1D (whichever is lower)
+      - Resistance: EMA50 4H
+      - Trigger Long: clôture 4H > EMA50 + RSI > 55
+      - Trigger Short: clôture < support
+    """
+    ctx = context_by_tf.get(pivot_tf, {})
+    pairs_data = ctx.get("pairs", [])
+    if not pairs_data:
+        return ""
+
+    # Also grab 1D data for support levels
+    ctx_1d = context_by_tf.get("1d", {})
+    pairs_1d = {p["pair"]: p for p in ctx_1d.get("pairs", [])}
+
+    rows = [
+        "## Niveaux Clés",
+        "",
+        "| Paire | Prix | Support | Résistance | Trigger Long | Trigger Short |",
+        "|-------|------|---------|------------|--------------|---------------|",
+    ]
+    for p in pairs_data:
+        pair = p["pair"]
+        close = p["close"]
+        ema50_4h = p["ema_slow"]
+        ema20_4h = p["ema_fast"]
+
+        # Support: min(EMA50 1D, recent low proxy = close - ATR*2)
+        p_1d = pairs_1d.get(pair, {})
+        ema50_1d = p_1d.get("ema_slow", ema50_4h)
+        atr = p.get("atr14", 0)
+        support = min(ema50_1d, close - atr * 2) if atr else ema50_1d
+
+        # Resistance: EMA50 4H (key reclaim level)
+        resistance = ema50_4h
+
+        # Format numbers based on magnitude
+        def _fmt(v):
+            if v >= 1000:
+                return f"{v:.0f}"
+            elif v >= 1:
+                return f"{v:.4f}"
+            else:
+                return f"{v:.6f}"
+
+        trigger_long = f">{_fmt(ema50_4h)} + RSI>55"
+        trigger_short = f"<{_fmt(support)}"
+
+        rows.append(
+            f"| **{pair}** | {_fmt(close)} | {_fmt(support)} | "
+            f"{_fmt(resistance)} | {trigger_long} | {trigger_short} |"
+        )
+
+    return "\n".join(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Coherence Check (social vs technique)
+# ─────────────────────────────────────────────────────────────────────
+
+def coherence_note(
+    context_by_tf: Dict[str, Dict],
+    social_sentiment: str = "",
+    pivot_tf: str = "4h",
+) -> str:
+    """Generate a coherence note when social sentiment contradicts technical structure.
+
+    Returns a markdown note if there's a divergence, empty string otherwise.
+    """
+    if not social_sentiment:
+        return ""
+
+    # Determine social bias
+    social_label = social_sentiment.strip().upper()
+    social_bull = social_label in ("BULL", "BULLISH")
+    social_bear = social_label in ("BEAR", "BEARISH")
+
+    if not (social_bull or social_bear):
+        return ""
+
+    # Count technical biases from pivot TF
+    ctx = context_by_tf.get(pivot_tf, {})
+    pairs_data = ctx.get("pairs", [])
+    if not pairs_data:
+        return ""
+
+    bear_count = 0
+    bull_count = 0
+    for p in pairs_data:
+        close = p["close"]
+        ema50 = p["ema_slow"]
+        if close < ema50:
+            bear_count += 1
+        else:
+            bull_count += 1
+
+    total = len(pairs_data)
+
+    # Detect contradiction
+    if social_bull and bear_count >= total * 0.6:
+        return (
+            "## ⚠️ Divergence Social / Technique\n\n"
+            f"Le sentiment social est **BULL** mais {bear_count}/{total} paires sont sous "
+            f"leur EMA50 {pivot_tf.upper()}. Le social est un accélérateur potentiel, pas un "
+            "déclencheur. Attendre les confirmations techniques (reclaim EMA50 + RSI>55) "
+            "avant d'agir sur le narratif."
+        )
+    elif social_bear and bull_count >= total * 0.6:
+        return (
+            "## ⚠️ Divergence Social / Technique\n\n"
+            f"Le sentiment social est **BEAR** mais {bull_count}/{total} paires sont au-dessus "
+            f"de leur EMA50 {pivot_tf.upper()}. Le pessimisme social ne reflète pas la structure "
+            "technique. Les positions existantes restent valides tant que les supports tiennent."
+        )
+
+    return ""

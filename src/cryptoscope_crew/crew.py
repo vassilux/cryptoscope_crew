@@ -17,7 +17,7 @@ from crewai_tools import SerperDevTool, MCPServerAdapter
 from mcp import StdioServerParameters
 from litellm.exceptions import ContentPolicyViolationError
 
-from cryptoscope_crew.reporting.precompute import precompute, precompute_multi, ready_signals_from_context, ready_signals_multi, tech_table_from_context, triggers_from_context, precompute_flow, flow_summary_table
+from cryptoscope_crew.reporting.precompute import precompute, precompute_multi, ready_signals_from_context, ready_signals_multi, tech_table_from_context, triggers_from_context, precompute_flow, flow_summary_table, key_levels_table, coherence_note
 from cryptoscope_crew.journal import save_task_output, validate_narrative_scan
 from cryptoscope_crew.domain.portfolio import load_portfolio, sync_portfolio_from_exchange
 from cryptoscope_crew.domain.decision_engine import decide_all, decisions_to_markdown
@@ -312,13 +312,17 @@ class CryptoscopeCrew:
             inputs["tech_tables_md"]  = "\n\n".join(sections)
             inputs["summary_table_md"] = bundle.get("summary_table_md", "")
             inputs["context_by_tf_json"] = json.dumps(bundle["context_by_tf"], ensure_ascii=False)
+            self._context_by_tf_json = inputs["context_by_tf_json"]
 
             # --- Decision Engine (déterministe) ---
             try:
                 portfolio = load_portfolio()
                 # Sync live balances from Binance (overwrites quantity + avg_price)
                 if os.getenv("PORTFOLIO_LIVE_SYNC", "1") == "1":
-                    portfolio = sync_portfolio_from_exchange(portfolio, pairs)
+                    try:
+                        portfolio = sync_portfolio_from_exchange(portfolio, pairs)
+                    except Exception as sync_err:
+                        print(f"[WARN] Binance sync failed (using static portfolio.json): {sync_err}")
                 # Enrichir avec les prix courants (depuis le TF principal)
                 prices = {p["pair"]: p["close"] for p in ctx_main.get("pairs", [])}
                 portfolio.enrich_all(prices)
@@ -413,7 +417,9 @@ class CryptoscopeCrew:
                 )
 
         except Exception as e:
+            import traceback
             print(f"[WARN] precompute_multi failed: {e}. Fallback sur TF principal.")
+            print(f"[WARN] Traceback:\n{traceback.format_exc()}")
             # fallbacks déjà posés
 
         inputs.setdefault("narratives_md", "")
@@ -429,6 +435,28 @@ class CryptoscopeCrew:
             "portfolio_strategy_md",
             "## Spot Portfolio Strategy\n\nPortfolio strategy indisponible.",
         )
+
+        # --- Niveaux Clés (déterministe, indépendant du decision engine) ---
+        try:
+            ctx_by_tf = json.loads(inputs.get("context_by_tf_json", "{}"))
+            inputs["key_levels_md"] = key_levels_table(ctx_by_tf, pivot_tf="4h")
+        except Exception:
+            inputs["key_levels_md"] = ""
+
+        # --- Always store enrichment sections on self for _cb_reporting ---
+        self._decisions_md = inputs["decisions_md"]
+        self._opportunities_md = inputs.get("opportunities_md", "")
+        self._portfolio_strategy_md = inputs.get("portfolio_strategy_md", "")
+        self._flow_table_md = inputs.get("flow_table_md", getattr(self, "_flow_table_md", ""))
+        self._key_levels_md = inputs.get("key_levels_md", "")
+
+        # --- Store TA tables on self for deterministic injection in callback ---
+        self._tech_table_md = inputs.get("tech_table_md", "")
+        self._tech_tables_md = inputs.get("tech_tables_md", "")
+        self._summary_table_md = inputs.get("summary_table_md", "")
+        self._triggers_md = inputs.get("triggers_md", "")
+        self._ready_signals_md = inputs.get("ready_signals_md", "")
+        self._precompute_ok = bool(self._tech_table_md and self._tech_table_md != "(pas de table technique)")
 
         # (debug facultatif)
         print("TF main:", tf_main)
@@ -475,10 +503,40 @@ class CryptoscopeCrew:
         save_task_output("tech_review", output.raw, self._run_dir)
 
     def _cb_reporting(self, output) -> None:
-        """Copie le report final + decisions dans run_dir ET reports/."""
+        """Copie le report final + decisions dans run_dir ET reports/.
+
+        Architecture: les sections numériques sont TOUJOURS injectées par le code,
+        indépendamment de ce que le LLM a écrit. Cela garantit que les données
+        réelles apparaissent même si le LLM hallucine.
+        """
         import pathlib as _p
-        report = output.raw
-        # Append la section Decision Summary (déterministe, pas LLM)
+        llm_narrative = output.raw
+
+        # ============================================================
+        # SECTION 1: Header (déjà dans le LLM output normalement)
+        # ============================================================
+        report = llm_narrative
+
+        # ============================================================
+        # SECTION 2: Tables TA déterministes (injectées inconditionnellement)
+        # Si precompute a réussi, on remplace la section "Configuration technique"
+        # du LLM par les vraies données.
+        # ============================================================
+        precompute_ok = getattr(self, "_precompute_ok", False)
+        if precompute_ok:
+            ta_block = self._build_ta_block()
+            report = report.rstrip() + "\n\n" + ta_block
+        else:
+            report = report.rstrip() + (
+                "\n\n## ⚠️ Données techniques indisponibles\n\n"
+                "Le calcul des indicateurs (EMA/RSI/ATR) a échoué pour cette exécution. "
+                "Les sections TA ci-dessus sont générées par le LLM SANS données réelles — "
+                "**ne pas trader sur ces informations**. Relancer `make run` quand l'API est accessible."
+            )
+
+        # ============================================================
+        # SECTION 3: Décisions + Opportunités + Portfolio Strategy
+        # ============================================================
         decisions_md = getattr(self, "_decisions_md", "")
         if decisions_md:
             report = report.rstrip() + "\n\n" + decisions_md
@@ -488,22 +546,87 @@ class CryptoscopeCrew:
         portfolio_strategy_md = getattr(self, "_portfolio_strategy_md", "")
         if portfolio_strategy_md:
             report = report.rstrip() + "\n\n" + portfolio_strategy_md
+
+        # ============================================================
+        # SECTION 4: Niveaux Clés + Regime + Flow
+        # ============================================================
+        key_levels_md = getattr(self, "_key_levels_md", "")
+        if key_levels_md:
+            report = report.rstrip() + "\n\n" + key_levels_md
         flow_table_md = getattr(self, "_flow_table_md", "")
         if flow_table_md:
             report = report.rstrip() + "\n\n## Regime + Flow\n\n" + flow_table_md
+
+        # ============================================================
+        # SECTION 5: Social Sentiment + Coherence check
+        # ============================================================
         social_md = getattr(self, "_social_md", "")
         if social_md:
             report = report.rstrip() + "\n\n" + social_md
+        # Coherence check (social vs technique)
+        social_data = getattr(self, "_social_data", {})
+        social_label = social_data.get("sentiment", {}).get("label", "")
+        if social_label and precompute_ok:
+            try:
+                ctx_by_tf = json.loads(
+                    getattr(self, "_context_by_tf_json", "{}")
+                )
+                note = coherence_note(ctx_by_tf, social_label, pivot_tf="4h")
+                if note:
+                    report = report.rstrip() + "\n\n" + note
+            except Exception:
+                pass
+
+        # ============================================================
+        # Write files
+        # ============================================================
         # 1) Copie dans run_dir
         dest = os.path.join(self._run_dir, "report.md")
         _p.Path(dest).write_text(report, encoding="utf-8")
-        print(f"[FILE] Report copi\u00e9 -> {dest}")
-        # 2) Écraser le output_file (reports/) pour inclure le Decision Summary
+        print(f"[FILE] Report copié -> {dest}")
+        # 2) Écraser le output_file (reports/) pour inclure les sections déterministes
         report_output = getattr(self, "_report_output_path", "")
         if report_output:
             _p.Path(report_output).parent.mkdir(parents=True, exist_ok=True)
             _p.Path(report_output).write_text(report, encoding="utf-8")
-            print(f"[FILE] Report principal mis \u00e0 jour -> {report_output}")
+            print(f"[FILE] Report principal mis à jour -> {report_output}")
+
+    def _build_ta_block(self) -> str:
+        """Construit le bloc TA déterministe à injecter dans le rapport."""
+        sections = []
+
+        # Table principale (1D)
+        tech_main = getattr(self, "_tech_table_md", "")
+        if tech_main and tech_main != "(pas de table technique)":
+            sections.append(
+                "## Configuration technique (données réelles)\n-----\n"
+                + tech_main + "\n-----"
+            )
+
+        # Synthèse multi-TF
+        summary = getattr(self, "_summary_table_md", "")
+        if summary:
+            sections.append(
+                "## Synthèse multi-timeframe\n-----\n"
+                + summary + "\n-----"
+            )
+
+        # Tables secondaires (4h, 1h)
+        tech_tables = getattr(self, "_tech_tables_md", "")
+        if tech_tables:
+            sections.append(tech_tables)
+
+        # Signaux prêts à tirer
+        ready = getattr(self, "_ready_signals_md", "")
+        if ready:
+            sections.append("## Signaux prêts à tirer\n" + ready)
+
+        # Triggers par paire
+        triggers = getattr(self, "_triggers_md", "")
+        if triggers:
+            sections.append("## Triggers par paire\n" + triggers)
+
+        return "\n\n".join(sections)
 
     # -------------
     # Agents
