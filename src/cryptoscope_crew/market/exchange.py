@@ -1,4 +1,6 @@
 from __future__ import annotations
+import asyncio
+import threading
 import ccxt
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
@@ -6,35 +8,56 @@ from ..config import ex_cfg
 
 # Simple exchange OHLCV fetcher via CCXT
 
-def get_exchange(name: str | None = None):
-    name = name or ex_cfg.name
-    ex = getattr(ccxt, name)({
-        "apiKey": ex_cfg.key,
-        "secret": ex_cfg.secret,
-        "enableRateLimit": True,
-    })
+# Instances réutilisées (load_markets est coûteux : une fois par instance suffit)
+_EXCHANGE_CACHE: Dict[Tuple[str, str], ccxt.Exchange] = {}
+_markets_lock = threading.Lock()
+
+
+def _cached_exchange(name: str, kind: str) -> ccxt.Exchange:
+    key = (name, kind)
+    ex = _EXCHANGE_CACHE.get(key)
+    if ex is None:
+        opts = {
+            "apiKey": ex_cfg.key,
+            "secret": ex_cfg.secret,
+            "enableRateLimit": True,
+        }
+        if kind == "swap":
+            opts["options"] = {"defaultType": "swap"}  # perpetual swap for funding/OI
+        ex = getattr(ccxt, name)(opts)
+        _EXCHANGE_CACHE[key] = ex
     return ex
+
+
+def _ensure_markets(ex: ccxt.Exchange) -> None:
+    """Charge les markets une seule fois, de façon thread-safe."""
+    if not getattr(ex, "markets", None):
+        with _markets_lock:
+            if not getattr(ex, "markets", None):
+                ex.load_markets()
+
+
+def get_exchange(name: str | None = None):
+    return _cached_exchange(name or ex_cfg.name, "spot")
 
 
 def _get_futures_exchange(name: str | None = None):
     """Get exchange instance configured for futures/derivatives (for funding + OI)."""
-    name = name or ex_cfg.name
-    opts = {
-        "apiKey": ex_cfg.key,
-        "secret": ex_cfg.secret,
-        "enableRateLimit": True,
-        "options": {"defaultType": "swap"},  # perpetual swap for funding/OI
-    }
-    ex = getattr(ccxt, name)(opts)
-    return ex
+    return _cached_exchange(name or ex_cfg.name, "swap")
+
+
+def _fetch_ohlcv_sync(ex: ccxt.Exchange, pair: str, timeframe: str, limit: int) -> list:
+    _ensure_markets(ex)
+    return ex.fetch_ohlcv(pair, timeframe=timeframe, limit=limit)
 
 
 async def fetch_ohlcv_async(
     pair: str, timeframe: str = "1h", limit: int = 1000, exchange_name: str | None = None
 ) -> pd.DataFrame:
-    # NOTE: ccxt async variant exists; here we keep sync for simplicity
     ex = get_exchange(exchange_name)
-    data = ex.fetch_ohlcv(pair, timeframe=timeframe, limit=limit)
+    # CCXT sync est bloquant : on délègue à un thread pour que asyncio.gather
+    # parallélise réellement les fetchs (paires × timeframes).
+    data = await asyncio.to_thread(_fetch_ohlcv_sync, ex, pair, timeframe, limit)
     df = pd.DataFrame(
         data, columns=["timestamp","open","high","low","close","volume"]
     )
@@ -154,6 +177,10 @@ def fetch_open_interest_history(
 #  Helpers
 # ─────────────────────────────────────────────────────────────────────
 
+# Résolutions paire spot → symbole perp déjà calculées, par exchange
+_PERP_SYMBOL_CACHE: Dict[Tuple[str, str], str] = {}
+
+
 def _to_perp_symbol(pair: str, ex) -> str:
     """Convert a spot pair like BTC/USDC to the exchange's perpetual symbol.
 
@@ -166,6 +193,11 @@ def _to_perp_symbol(pair: str, ex) -> str:
     if ":" in pair:
         return pair
 
+    cache_key = (getattr(ex, "id", ""), pair)
+    cached = _PERP_SYMBOL_CACHE.get(cache_key)
+    if cached:
+        return cached
+
     # Try common stablecoin suffixes
     base_quote = pair.split("/")
     if len(base_quote) == 2:
@@ -173,16 +205,19 @@ def _to_perp_symbol(pair: str, ex) -> str:
         perp = f"{pair}:{quote}"
         # Verify it exists on the exchange
         try:
-            ex.load_markets()
+            _ensure_markets(ex)
             if perp in ex.markets:
+                _PERP_SYMBOL_CACHE[cache_key] = perp
                 return perp
             # Try USDT variant if USDC pair
             if quote == "USDC":
                 alt = f"{base_quote[0]}/USDT:USDT"
                 if alt in ex.markets:
+                    _PERP_SYMBOL_CACHE[cache_key] = alt
                     return alt
         except Exception:
             pass
+        _PERP_SYMBOL_CACHE[cache_key] = perp
         return perp
 
     return pair
