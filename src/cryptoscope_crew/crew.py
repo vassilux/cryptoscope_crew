@@ -443,6 +443,25 @@ class CryptoscopeCrew:
         except Exception:
             inputs["key_levels_md"] = ""
 
+        # --- Kronos Forecast (observation seulement — n'influence rien) ---
+        inputs["kronos_md"] = ""
+        if os.getenv("KRONOS_ENABLED", "1") == "1":
+            try:
+                from cryptoscope_crew.forecast.kronos import forecast_pairs, kronos_table_md
+                forecasts = forecast_pairs(pairs)
+                inputs["kronos_md"] = kronos_table_md(forecasts)
+                if forecasts:
+                    kr_path = os.path.join(run_dir, "kronos_forecast.json")
+                    pathlib.Path(kr_path).write_text(
+                        json.dumps([f.model_dump(mode="json") for f in forecasts],
+                                   indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    print(f"[OK] Kronos: {len(forecasts)} forecasts -> {kr_path}")
+            except Exception as ke:
+                print(f"[WARN] Kronos forecast indisponible: {ke}")
+        self._kronos_md = inputs["kronos_md"]
+
         # --- Always store enrichment sections on self for _cb_reporting ---
         self._decisions_md = inputs["decisions_md"]
         self._opportunities_md = inputs.get("opportunities_md", "")
@@ -556,6 +575,10 @@ class CryptoscopeCrew:
         flow_table_md = getattr(self, "_flow_table_md", "")
         if flow_table_md:
             report = report.rstrip() + "\n\n## Regime + Flow\n\n" + flow_table_md
+        # Kronos (observation) — affiché pour évaluation, jamais utilisé en décision
+        kronos_md = getattr(self, "_kronos_md", "")
+        if kronos_md:
+            report = report.rstrip() + "\n\n" + kronos_md
 
         # ============================================================
         # SECTION 5: Social Sentiment + Coherence check
