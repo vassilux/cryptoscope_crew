@@ -19,6 +19,8 @@ narrative_scan:
     - exemples: ETF SOL/ETH, L2 upgrades, AI-coins, RWA, memecoins, airdrops, restaking, inscriptions/BRC-20.
     - privilégie des sources reconnues (CoinDesk, Blockworks, The Block, Bloomberg Crypto, CNBC Crypto, FT, WSJ, Messari).
     - écarte blogs obscurs / fils X non vérifiables.
+    - chaque narratif doit citer une source DISTINCTE : ne réutilise JAMAIS la même URL pour plusieurs narratifs (un narratif sans source propre sera écarté).
+    - cite uniquement des URLs réellement retournées par l'outil de recherche — n'invente aucun lien.
 
     Heat scoring:
     1 = bruit faible ; 2 = niche ; 3 = modéré (quelques sources) ;
@@ -96,27 +98,11 @@ reporting_task:
     ## Points clés
     - 3 bullets max, orientés décision, en français.
 
-    ## Configuration technique
-    -----
-    {tech_table_md}
-    -----
-
-    ## Synthèse multi-timeframe
-    -----
-    {summary_table_md}
-    -----
-    {tech_tables_md}
-
-    ## Signaux prêts à tirer
-    {ready_signals_md}
-
-    ## Triggers par paire
-    {triggers_md}
-
     ## Narratifs en tendance
     À partir des résultats de 'narrative_scan' (JSON), synthétise 3–5 bullets :
     - Titre (Heat {1..5}) — 1 phrase — Tickers — 1 source max.
     - Ne pas inventer de liens : cite uniquement ceux fournis par 'narrative_scan'.
+    - Une source DISTINCTE par narratif : si deux narratifs partagent la même URL, n'affiche que celui au Heat le plus élevé.
     - Si aucune source vérifiée pour un narratif, ne pas l’afficher.
 
     ## Risques
@@ -125,7 +111,18 @@ reporting_task:
     ## Watchlist
     (niveaux/événements à surveiller, concis)
 
+    IMPORTANT — N'inclus AUCUNE section technique (tables EMA/RSI, synthèse
+    multi-timeframe, signaux, triggers) : elles sont injectées automatiquement
+    par le système après ta rédaction. Les recopier créerait des doublons.
+
+    Données techniques (référence pour tes "Points clés" — NE PAS recopier) :
+    -----
+    {tech_table_md}
+
+    {summary_table_md}
+    -----
+
     Contexte (référence) :
     {context_json}
-  expected_output: "Markdown final du rapport."
+  expected_output: "Markdown final du rapport (Points clés, Narratifs, Risques, Watchlist — sans sections techniques)."
   agent: reporting_analyst

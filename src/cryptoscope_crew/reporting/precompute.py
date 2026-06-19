@@ -49,7 +49,14 @@ def tech_table_from_context(context: dict) -> str:
         score = max(0.0, min(1.0, base + 0.5*ema_gap + 0.5*(rsi_score-0.5)))
         conf = "High" if score>=0.75 else "Medium" if score>=0.55 else "Low"
 
-        if trend_up and rsi < 45:
+        # États transitoires : le croisement EMA est en retard sur le prix
+        recovering = (not trend_up) and close > ema_fast and close > ema_slow
+        weakening = trend_up and close < ema_fast and close < ema_slow
+        if recovering:
+            note = "Croisement EMA baissier mais prix > EMA20/EMA50 : récupération en cours — reclaim à confirmer sur clôture."
+        elif weakening:
+            note = "Croisement EMA haussier mais prix < EMA20/EMA50 : tendance fragilisée — risque de bascule."
+        elif trend_up and rsi < 45:
             note = "Tendance haussière mais momentum faible (RSI<45) : prudence, risque d’invalidation."
         elif (not trend_up) and rsi > 55:
             note = "Tendance baissière mais momentum ferme (RSI>55) : risque de squeeze/retournement."
@@ -208,27 +215,40 @@ def precompute_multi(pairs: list[str], timeframes: list[str], lookback: int) -> 
        - tables_by_tf: { "1d": "markdown", "4h": "markdown", ... }
        - summary_table_md: "markdown" (biais par TF + score d'alignement)
     """
-    context_by_tf, tables_by_tf = {}, {}
-    for tf in timeframes:
-        ctx = build_context(pairs, tf, lookback)
-        context_by_tf[tf] = ctx
-        tables_by_tf[tf] = tech_table_from_context(ctx)
+    # Un seul event loop : tous les fetchs (timeframes × paires) partent en parallèle
+    async def _gather_all():
+        ctxs = await asyncio.gather(
+            *[_build_context_async(pairs, tf, lookback) for tf in timeframes]
+        )
+        return dict(zip(timeframes, ctxs))
+
+    context_by_tf = asyncio.run(_gather_all())
+    tables_by_tf = {tf: tech_table_from_context(ctx) for tf, ctx in context_by_tf.items()}
 
     # tableau de synthèse (biais par TF + score)
+    # ↗ = croisement bear mais prix > EMA20/EMA50 (récupération)
+    # ↘ = croisement bull mais prix < EMA20/EMA50 (fragilisation)
     rows = ["| Pair | 1D | 4H | 1H | Alignement |",
             "|------|----|----|----|-----------|"]
     def col(p, tf):
-        # "Bull" / "Bear" depuis le contexte
+        # (base, label) — base sert au vote d'alignement, label à l'affichage
         r = next(x for x in context_by_tf[tf]["pairs"] if x["pair"] == p)
-        return "Bull" if r["ema_fast"] > r["ema_slow"] else "Bear"
+        bull_cross = r["ema_fast"] > r["ema_slow"]
+        base = "Bull" if bull_cross else "Bear"
+        close = r["close"]
+        if not bull_cross and close > r["ema_fast"] and close > r["ema_slow"]:
+            return base, "Bear↗"
+        if bull_cross and close < r["ema_fast"] and close < r["ema_slow"]:
+            return base, "Bull↘"
+        return base, base
     for p in pairs:
-        b1d = col(p, "1d") if "1d" in context_by_tf else "-"
-        b4h = col(p, "4h") if "4h" in context_by_tf else "-"
-        b1h = col(p, "1h") if "1h" in context_by_tf else "-"
+        b1d, l1d = col(p, "1d") if "1d" in context_by_tf else ("-", "-")
+        b4h, l4h = col(p, "4h") if "4h" in context_by_tf else ("-", "-")
+        b1h, l1h = col(p, "1h") if "1h" in context_by_tf else ("-", "-")
         votes = [b for b in (b1d, b4h, b1h) if b in ("Bull","Bear")]
         bull = votes.count("Bull"); bear = votes.count("Bear")
         align = f"{max(bull,bear)}/{len(votes)}"
-        rows.append(f"| **{p}** | {b1d} | {b4h} | {b1h} | {align} |")
+        rows.append(f"| **{p}** | {l1d} | {l4h} | {l1h} | {align} |")
     summary_md = "\n".join(rows)
 
     return {

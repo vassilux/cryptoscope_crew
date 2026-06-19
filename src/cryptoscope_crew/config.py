@@ -17,8 +17,9 @@ class LLMConfig:
 @dataclass
 class ExchangeConfig:
     name: str = os.getenv("DEFAULT_EXCHANGE", "binance")
-    key: str | None = os.getenv("BINANCE_KEY")
-    secret: str | None = os.getenv("BINANCE_SECRET")
+    # Accepte les deux conventions de nommage (BINANCE_KEY historique, BINANCE_API_KEY doc)
+    key: str | None = os.getenv("BINANCE_KEY") or os.getenv("BINANCE_API_KEY")
+    secret: str | None = os.getenv("BINANCE_SECRET") or os.getenv("BINANCE_API_SECRET")
     # endpoints publics suffisent pour OHLCV; les clés peuvent rester vides
 
 @dataclass
