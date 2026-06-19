@@ -1,43 +1,41 @@
-"""Quick smoke test for journal module."""
-from cryptoscope_crew.journal import validate_narrative_scan, save_task_output
-import tempfile, os, json
+"""Tests du module journal (sauvegarde des outputs + validation narrative_scan)."""
+import json
+import os
 
-d = tempfile.mkdtemp()
+from cryptoscope_crew.journal import save_task_output, validate_narrative_scan
 
-# --- Test 1: valid JSON embedded in prose
-raw = 'Voici: ' + json.dumps({
-    "narratives": [{
-        "title": "DeFi Boom",
-        "summary": "Explosion DeFi",
-        "tickers": ["ETH"],
-        "heat": 4,
-        "sources": ["https://example.com"]
-    }]
-}) + ' fin du texte.'
 
-result = validate_narrative_scan(raw, d)
-assert len(result["narratives"]) == 1, f"Expected 1 narrative, got {result}"
-assert os.path.isfile(os.path.join(d, "narrative_scan.json"))
-print("Test 1 PASS: valid JSON extracted and validated")
+def test_valid_json_embedded_in_prose(tmp_path):
+    raw = 'Voici: ' + json.dumps({
+        "narratives": [{
+            "title": "DeFi Boom",
+            "summary": "Explosion DeFi",
+            "tickers": ["ETH"],
+            "heat": 4,
+            "sources": ["https://example.com/article"]
+        }]
+    }) + ' fin du texte.'
 
-# --- Test 2: no JSON at all
-d2 = tempfile.mkdtemp()
-result2 = validate_narrative_scan("pas de json ici", d2)
-assert result2 == {"narratives": []}, f"Expected empty fallback, got {result2}"
-assert os.path.isfile(os.path.join(d2, "narrative_scan.invalid.txt"))
-print("Test 2 PASS: invalid input → fallback + .invalid.txt")
+    result = validate_narrative_scan(raw, str(tmp_path))
+    assert len(result["narratives"]) == 1
+    assert os.path.isfile(tmp_path / "narrative_scan.json")
 
-# --- Test 3: heat out of range
-d3 = tempfile.mkdtemp()
-raw3 = json.dumps({"narratives": [{"title":"x","summary":"s","tickers":[],"heat":0,"sources":[]}]})
-result3 = validate_narrative_scan(raw3, d3)
-assert result3 == {"narratives": []}, f"Expected fallback for heat=0, got {result3}"
-print("Test 3 PASS: heat=0 rejected → fallback")
 
-# --- Test 4: save_task_output
-d4 = tempfile.mkdtemp()
-p = save_task_output("scan_market", "raw output text", d4)
-assert os.path.isfile(p)
-print("Test 4 PASS: save_task_output wrote file")
+def test_no_json_falls_back(tmp_path):
+    result = validate_narrative_scan("pas de json ici", str(tmp_path))
+    assert result == {"narratives": []}
+    assert os.path.isfile(tmp_path / "narrative_scan.invalid.txt")
 
-print("\nAll tests passed!")
+
+def test_heat_out_of_range_rejected(tmp_path):
+    raw = json.dumps({"narratives": [
+        {"title": "x", "summary": "s", "tickers": [], "heat": 0,
+         "sources": ["https://example.com/x"]}
+    ]})
+    result = validate_narrative_scan(raw, str(tmp_path))
+    assert result == {"narratives": []}
+
+
+def test_save_task_output(tmp_path):
+    p = save_task_output("scan_market", "raw output text", str(tmp_path))
+    assert os.path.isfile(p)
