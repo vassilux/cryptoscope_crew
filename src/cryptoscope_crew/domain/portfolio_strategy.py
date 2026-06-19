@@ -96,6 +96,7 @@ class PortfolioStrategyResult(BaseModel):
     cash_min_pct: float = 20.0     # target minimum from risk_limits
     overall_regime: str = ""        # dominant regime across pairs
     summary: str = ""               # one-liner for the report header
+    raise_cash_plan: List[str] = Field(default_factory=list)  # étapes concrètes si cash < cible
 
 
 # ------------------------------------------------------------------ #
@@ -179,6 +180,14 @@ class PortfolioStrategyEngine:
             + (", ".join(parts) if parts else "All WAIT")
         )
 
+        # Plan de rééquilibrage : si le cash est sous la cible, proposer
+        # des ventes de swing concrètes (jamais de constat sans action).
+        raise_cash_plan: List[str] = []
+        if total_val > 0 and cash_pct < rl.cash_min_pct:
+            raise_cash_plan = PortfolioStrategyEngine._build_raise_cash_plan(
+                portfolio, context_by_tf, rl
+            )
+
         return PortfolioStrategyResult(
             positions=position_strategies,
             cash_usdc=portfolio.cash_usdc,
@@ -187,7 +196,84 @@ class PortfolioStrategyEngine:
             cash_min_pct=rl.cash_min_pct,
             overall_regime=overall,
             summary=summary,
+            raise_cash_plan=raise_cash_plan,
         )
+
+    # ────────────────────────────────────────────────────────────── #
+    #  Raise-cash plan
+    # ────────────────────────────────────────────────────────────── #
+
+    @staticmethod
+    def _build_raise_cash_plan(
+        portfolio: "Portfolio",
+        context_by_tf: Dict[str, dict],
+        rl: "RiskLimits",
+    ) -> List[str]:
+        """Étapes concrètes pour remonter le cash à cash_min_pct.
+
+        Vend le swing des paires structurellement les plus faibles d'abord
+        (close 4H le plus loin sous EMA50 4H), sans jamais entamer le core
+        ni min_core_qty. Indique le niveau d'exécution (sur force vers
+        EMA50 4H plutôt qu'en panique).
+        """
+        total_val = portfolio.total_value or 0.0
+        if total_val <= 0:
+            return []
+        cash_needed = total_val * (rl.cash_min_pct / 100) - portfolio.cash_usdc
+        if cash_needed <= 0:
+            return []
+
+        ctx_4h = context_by_tf.get("4h", {})
+        candidates = []
+        for pos in portfolio.positions:
+            core_qty = pos.quantity * (pos.core_pct / 100)
+            sellable = max(0.0, pos.quantity - max(core_qty, pos.min_core_qty))
+            if sellable <= 0 or pos.current_price <= 0:
+                continue
+            e4h = _get_entry(ctx_4h, pos.pair)
+            # faiblesse = distance du close vs EMA50 4H (plus négatif = plus faible)
+            weakness = 0.0
+            ema50 = None
+            if e4h and e4h.get("ema_slow"):
+                ema50 = e4h["ema_slow"]
+                weakness = (e4h["close"] - ema50) / ema50 * 100
+            candidates.append((weakness, pos, sellable, ema50))
+        candidates.sort(key=lambda c: c[0])  # structure la plus faible d'abord
+
+        if not candidates:
+            return [
+                f"⚠ Aucun swing vendable (positions au floor core) — impossible de "
+                f"remonter le cash à {rl.cash_min_pct:.0f}% sans entamer le core. "
+                f"Décision manuelle requise."
+            ]
+
+        lines: List[str] = []
+        remaining = cash_needed
+        for step, (weakness, pos, sellable, ema50) in enumerate(candidates, 1):
+            if remaining <= 0:
+                break
+            ticker = pos.pair.split("/")[0]
+            qty = min(sellable, remaining / pos.current_price)
+            proceeds = qty * pos.current_price
+            if ema50 is not None:
+                if pos.current_price < ema50:
+                    level_txt = f" — exécuter sur rebond vers EMA50 4H ({ema50:.4f}), pas en panique sous support"
+                else:
+                    level_txt = f" — exécutable au prix courant (déjà > EMA50 4H {ema50:.4f})"
+            else:
+                level_txt = ""
+            lines.append(
+                f"{step}. Vendre ~{qty:.6f} {ticker} (~{proceeds:.0f} USDC) — swing {pos.pair}, "
+                f"structure 4H {weakness:+.1f}% vs EMA50{level_txt}"
+            )
+            remaining -= proceeds
+
+        if remaining > 0:
+            lines.append(
+                f"⚠ Swing vendable insuffisant : il manquera ~{remaining:.0f} USDC "
+                f"pour atteindre {rl.cash_min_pct:.0f}% (core préservé)."
+            )
+        return lines
 
     # ────────────────────────────────────────────────────────────── #
     #  Per-position logic
@@ -496,6 +582,11 @@ def portfolio_strategy_to_markdown(result: PortfolioStrategyResult) -> str:
         f"({result.cash_pct:.0f}% of portfolio — {cash_status})"
     )
     lines.append(f"- **Target reserve:** >= {result.cash_min_pct:.0f}%")
+    if result.raise_cash_plan:
+        lines.append("")
+        lines.append("**Plan de rééquilibrage (RAISE_CASH) :**")
+        for step in result.raise_cash_plan:
+            lines.append(f"- {step}")
     lines.append("")
 
     return "\n".join(lines)

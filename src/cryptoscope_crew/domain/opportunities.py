@@ -100,6 +100,32 @@ def _score(
 #  Helpers portfolio
 # ------------------------------------------------------------------ #
 
+def _reactivation_proximity_score(e4h: Optional[dict], reactivation_met: bool = False) -> float:
+    """Score 0-90 : proximité de la condition de réactivation (reclaim EMA50 4H + RSI 4H > 55).
+
+    Remplace le score plat 0.0 en mode DEFENSIVE : permet de prioriser la paire
+    dont la réactivation se déclenchera en premier.
+
+    Composantes :
+      - prix (0-45) : distance du close sous EMA50 4H — 0% → 45 pts ; ≥4% → 0
+      - RSI  (0-25) : distance du RSI 4H à 55 — 0 pt d'écart → 25 ; ≥20 pts → 0
+      - bonus 20 si la condition est déjà remplie (à confirmer clôture suivante)
+    """
+    if not e4h or not e4h.get("ema_slow") or not e4h.get("close"):
+        return 0.0
+    close = e4h["close"]
+    ema50 = e4h["ema_slow"]
+    rsi = e4h.get("rsi14", 50.0)
+
+    dist_pct = max(0.0, (ema50 - close) / close * 100)
+    price_comp = max(0.0, 45 - dist_pct * 11.25)
+    rsi_gap = max(0.0, 55 - rsi)
+    rsi_comp = max(0.0, 25 - rsi_gap * 1.25)
+    bonus = 20 if reactivation_met else 0
+
+    return round(min(90.0, price_comp + rsi_comp + bonus), 1)
+
+
 def _portfolio_metrics(portfolio: Optional["Portfolio"]) -> tuple[float, float]:
     """Retourne (cash_pct, exposure_pct) en 0-100, ou (50, 50) par défaut."""
     if portfolio is None or portfolio.total_value == 0:
@@ -216,18 +242,28 @@ class OpportunityEngine:
 
             # --- C) DEFENSIVE ---
             elif dec.suggested_action == Action.DEFENSIVE:
-                s = _score(**score_args)
+                # Score = proximité de la réactivation (pas un score d'achat) :
+                # plus la paire est proche du reclaim EMA50 4H + RSI>55,
+                # plus elle est prioritaire à surveiller.
+                s = _reactivation_proximity_score(e4h, dec.reactivation_met)
                 levels = {}
                 if dec.invalidation:
                     levels["reactivation"] = dec.invalidation
+                action_text = (
+                    "Structure baissière alignée. "
+                    "Conserver le cash et protéger les positions existantes. "
+                    "Score = proximité de la réactivation."
+                )
+                if dec.reactivation_met:
+                    action_text += (
+                        " ⚠ Condition de réactivation déjà remplie — "
+                        "confirmer sur la prochaine clôture 4H."
+                    )
                 candidates.append(Opportunity(
                     pair=pair,
                     kind="DEFENSIVE",
                     score=s,
-                    action_text=(
-                        f"Structure baissière alignée. "
-                        f"Conserver le cash et protéger les positions existantes."
-                    ),
+                    action_text=action_text,
                     levels=levels,
                 ))
 

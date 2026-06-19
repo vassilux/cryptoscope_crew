@@ -55,6 +55,7 @@ class DecisionResult(BaseModel):
     invalidation: Optional[str] = None              # condition d'invalidation
     watch_levels: Optional[Dict[str, str]] = None   # niveaux de surveillance (WAIT)
     distance_pct: Optional[float] = None            # distance close_4h vs EMA20_4H (%)
+    reactivation_met: bool = False                  # condition de réactivation déjà remplie (DEFENSIVE)
     rationale: str = ""                              # explication lisible
     rule_id: str = ""                                # R1, R2 … pour traçabilité
 
@@ -277,17 +278,33 @@ def decide(
 
     # --- R2 : alignement baissier 1D + 4H ---
     if b1d == "Bear" and b4h == "Bear":
+        # La condition de réactivation (reclaim EMA50 4H + RSI 4H > 55) peut
+        # déjà être remplie sur la dernière clôture alors que le croisement
+        # EMA20/EMA50 reste baissier : on le signale explicitement au lieu
+        # de demander d'attendre un événement déjà survenu.
+        rsi_4h = _rsi(context_by_tf["4h"], pair) if "4h" in context_by_tf else 50.0
+        reactivation_met = bool(ema50_4h) and close_4h > ema50_4h and rsi_4h > 55
+        if reactivation_met:
+            rationale = (
+                f"Croisement EMA 1D/4H encore baissier, MAIS la condition de "
+                f"réactivation est déjà remplie sur la dernière clôture 4H "
+                f"(close {close_4h:.4f} > EMA50 {ema50_4h:.4f}, RSI {rsi_4h:.1f} > 55). "
+                f"Confirmer sur la prochaine clôture 4H avant de réactiver les achats."
+            )
+        else:
+            rationale = (
+                f"Alignement baissier 1D/4H. "
+                f"Pas de setup long tant que le 4H ne reclaim pas EMA50. "
+                f"Conserver le cash, protéger les positions."
+            )
         return DecisionResult(
             **base,
             suggested_action=Action.DEFENSIVE,
             adjustment_pct=None,
             reentry_zone=None,
             invalidation=f"Reclaim EMA50 4H ({ema50_4h:.4f}) + RSI 4H > 55",
-            rationale=(
-                f"Alignement baissier 1D/4H. "
-                f"Pas de setup long tant que le 4H ne reclaim pas EMA50. "
-                f"Conserver le cash, protéger les positions."
-            ),
+            reactivation_met=reactivation_met,
+            rationale=rationale,
             rule_id="R2",
         )
 
@@ -455,6 +472,11 @@ def decisions_to_markdown(decisions: List[DecisionResult]) -> str:
             lines.append(f"- **Re-entry zone:** {d.reentry_zone}")
         if d.invalidation and d.suggested_action == Action.DEFENSIVE:
             lines.append(f"- **Reactivation condition:** {d.invalidation}")
+            if d.reactivation_met:
+                lines.append(
+                    "- **⚠ Condition déjà remplie sur la dernière clôture 4H** — "
+                    "confirmer sur la prochaine clôture avant de réactiver les achats."
+                )
         elif d.invalidation:
             lines.append(f"- **Invalidation:** {d.invalidation}")
         if d.watch_levels:
