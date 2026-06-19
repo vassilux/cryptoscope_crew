@@ -24,6 +24,13 @@ Exemples :
 - `2026-06-19_reorganisation-skills.md`
 - `2026-07-02_ajout-agent-onchain.md`
 
+## Index (obligatoire)
+
+À **chaque** nouvelle entrée, ajouter sa ligne en haut de [INDEX.md](INDEX.md)
+(date, type, lien, résumé d'une ligne). C'est le point d'entrée que les agents
+scannent **avant une décision d'architecture/gouvernance** — sans index, l'historique
+n'est jamais consulté.
+
 ## Format d'une entrée
 
 Chaque fichier suit cette trame :

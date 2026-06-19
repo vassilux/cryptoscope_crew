@@ -53,7 +53,10 @@ cryptoscope/
 `analyses/AAAA-MM-JJ_sujet.md` consigne les **décisions structurantes** et
 **évolutions d'architecture/gouvernance** (≠ `runs/` = exécutions, ≠ `reports/` =
 marché). Voir [analyses/README.md](analyses/README.md) pour la convention.
-Créer une entrée à chaque réorganisation, nouvelle décision d'archi ou audit.
+
+> **Déclencheur (agents) :** avant toute **décision d'architecture / gouvernance**,
+> scanner [analyses/INDEX.md](analyses/INDEX.md) et n'ouvrir que l'entrée pertinente.
+> Après une telle décision : créer une entrée datée **et** ajouter sa ligne dans `INDEX.md`.
 
 ## Dev Commands
 ```bash
