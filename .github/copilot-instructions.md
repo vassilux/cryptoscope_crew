@@ -1,3 +1,8 @@
+<!--
+  GENERATED FILE - DO NOT EDIT.
+  Source of truth: Claude.md (repo root). Regenerate with ./sync-ai-skills.ps1.
+  Shared project context for GitHub Copilot, mirrored verbatim from Claude.md.
+-->
 # CryptoScope — Trading Bot
 
 > **Contexte partagé Claude ↔ Copilot.** Ce fichier `Claude.md` est la **source unique**
@@ -111,3 +116,4 @@ GLASSNODE_API_KEY
 KRONOS_ENABLED=1
 ```
 Use `python-dotenv`. Never commit `.env`.
+
