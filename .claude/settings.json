@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(.venv/Scripts/python.exe -c \"import time; from cryptoscope_crew.reporting.precompute import precompute_multi; t0=time.perf_counter\\(\\); b=precompute_multi\\(['BTC/USDC','ETH/USDC','SOL/USDC'],['1d','4h','1h'],450\\); dt=time.perf_counter\\(\\)-t0; print\\(f'{dt:.2f}s - TFs: {list\\(b[\\\\\"context_by_tf\\\\\"].keys\\(\\)\\)} - pairs 1d: {[p[\\\\\"pair\\\\\"] for p in b[\\\\\"context_by_tf\\\\\"][\\\\\"1d\\\\\"][\\\\\"pairs\\\\\"]]}'\\)\")",
+      "PowerShell(.venv/Scripts/python.exe _smoke_precompute.py)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "PowerShell($dir = \"src/cryptoscope_crew/forecast/kronos_model\"; New-Item -ItemType Directory -Force $dir | Out-Null; $base = \"https://raw.githubusercontent.com/shiyu-coder/Kronos/master\"; foreach \\($f in @\\(\"model/__init__.py\",\"model/kronos.py\",\"model/module.py\",\"LICENSE\"\\)\\) { $name = Split-Path $f -Leaf; Invoke-WebRequest -Uri \"$base/$f\" -OutFile \"$dir/$name\" }; Get-ChildItem $dir | Select-Object Name, Length)",
+      "PowerShell(Select-String -Path src/cryptoscope_crew/forecast/kronos_model/kronos.py, src/cryptoscope_crew/forecast/kronos_model/module.py -Pattern '^\\(import|from\\)\\\\s' | ForEach-Object { \"$\\(Split-Path $_.Path -Leaf\\): $\\($_.Line\\)\" })",
+      "PowerShell(uv --version)",
+      "PowerShell(uv add torch einops safetensors tqdm)",
+      "PowerShell(.venv/Scripts/python.exe _smoke_kronos.py)",
+      "PowerShell($env:PYTHONIOENCODING = \"utf-8\"; .venv/Scripts/python.exe _smoke_kronos.py)",
+      "PowerShell(Remove-Item c:\\\\jobVassili\\\\Dev\\\\crypto\\\\cryptoscope\\\\_smoke_kronos.py -Confirm:$false)",
+      "PowerShell(.venv/Scripts/python.exe -m pytest tests/ --tb=short -q 2>$null)"
+    ]
+  }
+}
